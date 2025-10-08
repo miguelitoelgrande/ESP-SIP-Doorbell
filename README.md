@@ -419,8 +419,8 @@ Button --[10kΩ]-- 3.3V
 ```
 
 
-| DoorBell Transformer |        |
-| (AC current)    |  R1     |
+
+| DoorBell Transformer<br>(AC current)    |  R1     |
 |-----------------|----------|
 | 8 V            | 330 Ohm  |
 | 12 V           | 560 Ohm  |
