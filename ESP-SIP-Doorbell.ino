@@ -1,6 +1,9 @@
 /* ====================================================================
    ESP8266 SIP Doorbell for FritzBox.
    see: https://github.com/miguelitoelgrande/ESP-SIP-Doorbell
+
+  Coded with some AI assistance and inspiration of similar projects (see Readme.md)
+
    Features:
    - Immediate SIP call on power-on/reset (doorbell priority)
    - Serial and WebSerial debugging options
@@ -400,7 +403,7 @@ void setup() {
   // ====================================================================
   // PRIORITY 2: INITIALIZE MANAGEMENT SYSTEMS
   // ====================================================================
-  DEBUG_PRINTLN("\n[INIT] Initializing management systems...");
+  DEBUG_PRINTLN("[INIT] Initializing management systems...");
   
   bool needAPMode = false;
   
@@ -453,7 +456,7 @@ void setup() {
     DEBUG_PRINTLN("[SLEEP] Light sleep disabled");
   }
   
-  DEBUG_PRINTLN("====================================\n");
+  // DEBUG_PRINTLN("====================================\n");
 }
 
 // ====================================================================
@@ -878,7 +881,7 @@ void handleRoot() {
   
   html += "<label>SIP Port:</label><input type='number' name='sipPort' value='" + String(config.sipPort) + "' required>";
   html += "<label>SIP User:</label><input type='text' name='sipUser' value='" + String(config.sipUser) + "' required>";
-  html += "<label>SIP Password:</label><input type='password' name='sipPassword' value='" + String(config.sipPassword) + "'>";
+  html += "<label>SIP Password:</label><input type='text' name='sipPassword' value='" + String(config.sipPassword) + "'>";
   html += "<label>Dial Number:</label><input type='text' name='dialNumber' value='" + String(config.dialNumber) + "' required>";
   html += "<small>Examples: use '1', so you can configure via FritzBox 'doorbell button 1' or '**9' which should ring on all phones registered at FritzBox</small><br>";
   html += "<label>Dial Text:</label><input type='text' name='dialText' value='" + String(config.dialText) + "'>";
