@@ -437,26 +437,34 @@ Other VoIP capable routers potentially similar (or worldwide VoIP services?)
 + Port: "LAN / Wi-Fi (IP door intercom system)".
 + Name: Tuerklingel.
 
+
 ![image info](./images/Fritz_Doorbell_Wizard-page1.png)
 Register a new "Intercom" IP Device
+
 
 SIP user and Password (also note the IP of your FritzBox)
 ![image info](./images/Fritz_Doorbell_Wizard-page2.png)
 
+
 We need this telephone number for the configuration on the ESP.
 ![image info](./images/Fritz_Doorbell_Wizard-page3.png)
+
 
 You could route this to all phones or a subset of phones.
 ![image info](./images/Fritz_Doorbell_Wizard-page3-combo.png)
 
+
 Check the Settings and apply
 ![image info](./images/Fritz_Doorbell_Wizard-page4.png)
+
 
 List of all registered devices. You can edit anytime with the pen-symbol:
 ![image info](./images/Fritz_Doorbell_Overview-page1.png)
 
+
 Leave the lower part empty (..for the next fancy project with ESP32-CAM?)
 ![image info](./images/Fritz_Doorbell_Overview-page2.png)
+
 
 If you forgot to note your SIP-passord/credentials, change here:
 ![image info](./images/Fritz_Doorbell_Overview-page2b.png)
