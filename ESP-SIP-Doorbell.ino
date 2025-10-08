@@ -206,7 +206,12 @@ void setup() {
   digitalWrite(LED_PIN, LOW); // LED on - we're calling!
   
   // Load config first (need it for everything)
-  EEPROM.begin(1024);
+  int eepromSize = 1024 + sizeof(EventLog); // Config space + EventLog space
+  DEBUG_PRINTF("[EEPROM] Initializing with size: %d bytes\n", eepromSize);
+  DEBUG_PRINTF("[EEPROM]   Config: %d bytes at offset %d\n", sizeof(Config), CONFIG_START);
+  DEBUG_PRINTF("[EEPROM]   EventLog: %d bytes at offset %d\n", sizeof(EventLog), EVENTLOG_START);
+  
+  EEPROM.begin(eepromSize);
   loadConfig();
   loadEventLog();
   
@@ -487,17 +492,29 @@ void setDefaultConfig() {
 // ====================================================================
 
 void loadEventLog() {
+  DEBUG_PRINTF("[EVENT] Loading event log from EEPROM address %d\n", EVENTLOG_START);
+  DEBUG_PRINTF("[EVENT] EventLog structure size: %d bytes\n", sizeof(EventLog));
+  DEBUG_PRINTF("[CONFIG] Config structure size: %d bytes\n", sizeof(config));
+
   EEPROM.get(EVENTLOG_START, eventLog);
   
+  DEBUG_PRINTF("[EVENT] Raw loaded values - count=%d, writeIndex=%d\n", 
+               eventLog.count, eventLog.writeIndex);
+  
   // Validate
-  if (eventLog.count < 0 || eventLog.count > 100000 || eventLog.writeIndex < 0 || eventLog.writeIndex >= MAX_EVENTS) {
+  if (eventLog.count < 0 || eventLog.count > 100000 || 
+      eventLog.writeIndex < 0 || eventLog.writeIndex >= MAX_EVENTS) {
     DEBUG_PRINTLN("[EVENT] Invalid event log detected, resetting");
+    DEBUG_PRINTF("[EVENT]   Invalid count: %d (expected 0-100000)\n", eventLog.count);
+    DEBUG_PRINTF("[EVENT]   Invalid writeIndex: %d (expected 0-%d)\n", eventLog.writeIndex, MAX_EVENTS-1);
+    
     eventLog.count = 0;
     eventLog.writeIndex = 0;
     memset(eventLog.events, 0, sizeof(eventLog.events));
     saveEventLog();
   } else {
-    DEBUG_PRINTF("[EVENT] Loaded event log: %d total events, writeIndex=%d\n", eventLog.count, eventLog.writeIndex);
+    DEBUG_PRINTF("[EVENT] ✓ Loaded valid event log: %d total events, writeIndex=%d\n", 
+                 eventLog.count, eventLog.writeIndex);
     
     // Debug: show last few events
     if (eventLog.count > 0) {
@@ -506,26 +523,30 @@ void loadEventLog() {
       for (int i = 0; i < toShow; i++) {
         int index = (eventLog.writeIndex - 1 - i + MAX_EVENTS) % MAX_EVENTS;
         DoorbellEvent& evt = eventLog.events[index];
-        DEBUG_PRINTF("[EVENT]   #%d: %s - %s\n", 
+        DEBUG_PRINTF("[EVENT]   #%d: %s - %s (reason=%d)\n", 
                      eventLog.count - i, 
                      formatTime(evt.timestamp).c_str(),
-                     evt.sipSuccess ? "SUCCESS" : "FAILED");
+                     evt.sipSuccess ? "SUCCESS" : "FAILED",
+                     evt.wakeReason);
       }
     }
   }
 }
 
 void saveEventLog() {
+  DEBUG_PRINTF("[EVENT] saveEventLog() called - saving count=%d, writeIndex=%d\n", 
+               eventLog.count, eventLog.writeIndex);
   EEPROM.put(EVENTLOG_START, eventLog);
-  EEPROM.commit();
+  bool result = EEPROM.commit();
+  DEBUG_PRINTF("[EVENT] saveEventLog() commit result: %s\n", result ? "SUCCESS" : "FAILED");
 }
 
 void logDoorbellEvent(bool success, int reason) {
   time_t now = time(nullptr);
   
   DEBUG_PRINTF("[EVENT] Logging event - timestamp=%lu, success=%d, reason=%d\n", 
-               now, success, reason);
-  DEBUG_PRINTF("[EVENT] Current state - count=%d, writeIndex=%d\n", 
+               (unsigned long)now, success ? 1 : 0, reason);
+  DEBUG_PRINTF("[EVENT] Current state BEFORE - count=%d, writeIndex=%d\n", 
                eventLog.count, eventLog.writeIndex);
   
   DoorbellEvent event;
@@ -535,7 +556,8 @@ void logDoorbellEvent(bool success, int reason) {
   
   // Store in ring buffer at current write position
   eventLog.events[eventLog.writeIndex] = event;
-  DEBUG_PRINTF("[EVENT] Stored event at index %d\n", eventLog.writeIndex);
+  DEBUG_PRINTF("[EVENT] Stored event at index %d (timestamp=%lu, success=%d)\n", 
+               eventLog.writeIndex, (unsigned long)event.timestamp, event.sipSuccess ? 1 : 0);
   
   // Update counters BEFORE saving
   int oldWriteIndex = eventLog.writeIndex;
@@ -547,15 +569,29 @@ void logDoorbellEvent(bool success, int reason) {
   DEBUG_PRINTF("[EVENT] Updated state - count=%d->%d, writeIndex=%d->%d\n", 
                oldCount, eventLog.count, oldWriteIndex, eventLog.writeIndex);
   
+  // Force flush any pending EEPROM operations
+  EEPROM.commit();
+  delay(10);
+  
   // Now save everything to EEPROM
-  saveEventLog();
-  DEBUG_PRINTLN("[EVENT] Saved to EEPROM");
+  EEPROM.put(EVENTLOG_START, eventLog);
+  bool commitResult = EEPROM.commit();
+  DEBUG_PRINTF("[EVENT] EEPROM.commit() result: %s\n", commitResult ? "SUCCESS" : "FAILED");
+  delay(50); // Give EEPROM time to settle
   
   // Verify it was saved correctly
   EventLog verify;
   EEPROM.get(EVENTLOG_START, verify);
-  DEBUG_PRINTF("[EVENT] Verification - count=%d, writeIndex=%d\n", 
+  DEBUG_PRINTF("[EVENT] Verification AFTER save - count=%d, writeIndex=%d\n", 
                verify.count, verify.writeIndex);
+  
+  if (verify.count != eventLog.count || verify.writeIndex != eventLog.writeIndex) {
+    DEBUG_PRINTLN("[EVENT] ⚠ WARNING: EEPROM verification FAILED!");
+    DEBUG_PRINTF("[EVENT]   Expected: count=%d, writeIndex=%d\n", eventLog.count, eventLog.writeIndex);
+    DEBUG_PRINTF("[EVENT]   Got:      count=%d, writeIndex=%d\n", verify.count, verify.writeIndex);
+  } else {
+    DEBUG_PRINTLN("[EVENT] ✓ EEPROM verification PASSED");
+  }
   
   DEBUG_PRINTF("[EVENT] Event #%d logged: %s - %s\n", 
                eventLog.count, formatTime(event.timestamp).c_str(), 
