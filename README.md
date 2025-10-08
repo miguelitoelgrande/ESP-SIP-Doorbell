@@ -4,11 +4,12 @@ Attach an ESP8266 board to a classic doorbell and use SIP protocol to make the p
 This ESP8266-based doorbell connects to your FritzBox (or other SIP server) and makes instant phone calls when triggered. The device prioritizes the doorbell function above all else - when powered on or reset, it immediately attempts to connect and ring your phones.
 
 - Hardware setup can be found here: https://www.reichelt.de/magazin/projekte/smarte-tuerklingel/
-- or: http://www.roehrenkramladen.de/Tuerklingel/TK-FB-V1a-1.html
 - or: https://www.heise.de/select/ct/2017/17/1502995489716437
 - or: https://www.heise.de/select/ct/2018/17/1534215254552977
+- or: http://www.roehrenkramladen.de/Tuerklingel/TK-FB-V1a-1.html
+There are probably even board schematics around, but breadboard-style wiring should be fine.
 
-But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity.
+And again: This ESP-Software is **not** TR064 based, but uses *SIP* for simplicity and security.
 
 ---
 
