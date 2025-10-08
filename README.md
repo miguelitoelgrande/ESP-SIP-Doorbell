@@ -1,100 +1,78 @@
-# ESP-SIP-Doorbell
+# ESP8266 SIP Doorbell - Getting Started Guide
 Attach an ESP8266 board to a classic doorbell and use SIP protocol to make the phones connected to a FritzBox ring.
 
-Hardware setup can be found here: https://www.reichelt.de/magazin/projekte/smarte-tuerklingel/
-Again: This version is not TR064 based, but uses SIP for simplicity.
-
-
-# ESP8266 SIP Doorbell - Getting Started Guide
-
-## 🔔 Overview
-
 This ESP8266-based doorbell connects to your FritzBox (or other SIP server) and makes instant phone calls when triggered. The device prioritizes the doorbell function above all else - when powered on or reset, it immediately attempts to connect and ring your phones.
+
+- Hardware setup can be found here: https://www.reichelt.de/magazin/projekte/smarte-tuerklingel/
+- or: http://www.roehrenkramladen.de/Tuerklingel/TK-FB-V1a-1.html
+- or: https://www.heise.de/select/ct/2017/17/1502995489716437
+- or: https://www.heise.de/select/ct/2018/17/1534215254552977
+
+But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity.
 
 ---
 
 ## ⚡ Key Features
-
-### 1. **Priority Ring Architecture**
-- **Immediate SIP call on wake/reset** - no delays, rings first
-- Fast WiFi connection (10 second timeout)
-- SIP initialization and call within seconds
-- All configuration and management happens AFTER the call
-
-### 2. **Dual Debug System**
+- Immediate SIP call on wake/reset: SIP initialization and call within seconds
+- All configuration and management happens AFTER the call. Also the first configuration
+- Starts an Access Point for the initial configuration (see below)
 - **Serial Debug**: Traditional UART debugging at 115200 baud
-- **WebSerial**: Browser-based debug console accessible via web interface
+- **WebSerial**: Browser-based debug console accessible via web interface (especially, if you cannot physically connect to the board)
 - Both can be enabled/disabled independently via configuration
-
-### 3. **Event Logging**
-- Persistent storage of last 50 doorbell events
-- Each event records:
-  - Timestamp (human-readable)
-  - Success/failure status
-  - Wake reason (power-on, deep sleep, reset, etc.)
-- Survives reboots and deep sleep cycles
-
-### 4. **Time Synchronization**
-- Automatic NTP time sync after initial call
-- Configurable NTP server (default: pool.ntp.org)
+- Persistent storage of last 100 doorbell events
+- Automatic time sync after initial call; configurable NTP server (default: pool.ntp.org) and timezone offset
 - Configurable timezone offset
-- Falls back to FritzBox/router as time source
-
-### 5. **Smart Power Management**
-- Configurable deep sleep timeout (default: 180 seconds)
-- Automatic sleep after inactivity
-- Wake on hardware reset (doorbell button)
+- **Smart Power Management**: Configurable deep sleep timeout (default: 180 seconds)
 - Set timeout to 0 to disable deep sleep
-
-### 6. **Flexible Network Configuration**
-- DHCP or static IP
-- WiFi station mode for normal operation
+- Wake on hardware reset (doorbell button)
+- **Flexible Network Configuration**: DHCP or static IP, WiFi station mode for normal operation
 - **Automatic AP fallback** when WiFi connection fails
-- Web-based configuration portal always available
-
-### 7. **Complete SIP Integration**
-- Compatible with FritzBox and standard SIP servers
-- Configurable ring duration (5-120 seconds)
-- Custom dial text/caller ID
-- Support for special dial codes (e.g., **9 for all phones)
+- Web-based configuration portal, status, past events, WebSerial always available
+- **Complete SIP Integration**: Compatible with FritzBox and standard SIP servers
+- Configurable ring duration (5-120 seconds) and dial text
 
 ---
 
 ## 🚀 First-Time Setup
 
-### Hardware Requirements
+### Hardware and Software Requirements
 - ESP8266 board (ESP-01, NodeMCU, Wemos D1, etc.)
-- Doorbell button connected between GPIO0 (D3) and GND
-- For deep sleep wake: RST pin connected to doorbell button circuit
 - USB power or battery power supply
+- Adapter to connect to existing, physical door bell circuit (with AC tansformer)
+- Doorbell button connected between RST (Reset) and GND - TODO: Might change to better solution
+- For deep sleep wake: RST pin connected to doorbell button circuit
+- Compile with **Arduino IDE** (.ino is the Sketch File, add the SIP.h and SIP.cpp)
 
 ### Initial Configuration
 
-1. **Power on the ESP8266**
+0. ** Register Settings at FritzBox **
+   - Ensure, you have all the information
+
+2. **Power on the ESP8266**
    - On first boot, default WiFi credentials won't work
    - Device automatically starts AP mode for configuration
 
-2. **Connect to the Configuration AP**
+3. **Connect to the Configuration AP**
    - SSID: `ESP-Doorbell-Config`
    - Password: `12345678`
    - Device IP: `192.168.4.1`
 
-3. **Open the Configuration Portal**
+4. **Open the Configuration Portal**
    - Open browser and navigate to: `http://192.168.4.1`
    - You'll see the main configuration page
 
-4. **Configure WiFi Settings**
+5. **Configure WiFi Settings**
    - **SSID**: Your home WiFi network name
    - **Password**: Your WiFi password
    - **Hostname**: Device hostname (default: ESP-Doorbell)
 
-5. **Configure Network Settings**
+6. **Configure Network Settings**
    - **Use DHCP**: Check for automatic IP (recommended for most users)
    - **Static IP**: Only if DHCP is unchecked (e.g., 192.168.178.123)
    - **Router/Gateway**: Your FritzBox IP (e.g., 192.168.178.1)
    - **Subnet Mask**: Usually 255.255.255.0
 
-6. **Configure SIP Settings** (Critical!)
+7. **Configure SIP Settings** (Critical!)
    - **SIP Port**: Usually 5060 (FritzBox default)
    - **SIP User**: Phone extension username (e.g., "tuerklingel")
    - **SIP Password**: Extension password from FritzBox
@@ -102,24 +80,24 @@ This ESP8266-based doorbell connects to your FritzBox (or other SIP server) and 
    - **Dial Text**: Caller ID text (e.g., "Front Door")
    - **Ring Duration**: How long phones ring (default: 30 seconds)
 
-7. **Configure Debug Options**
+8. **Configure Debug Options**
    - **Serial Debug**: Enable for USB/UART debugging
    - **WebSerial Debug**: Enable for browser-based debug console
    - Both can be enabled simultaneously
 
-8. **Configure Time Settings**
+9. **Configure Time Settings**
    - **NTP Server**: Time server (default: pool.ntp.org)
    - **Timezone Offset**: Seconds from UTC
      - UTC+1 (CET): 3600
      - UTC+2 (CEST): 7200
      - UTC-5 (EST): -18000
 
-9. **Configure Power Management**
+10. **Configure Power Management**
    - **Sleep Timeout**: Seconds before deep sleep (default: 180)
    - Set to 0 to disable deep sleep
    - Device stays awake longer when accessed via web interface
 
-10. **Save Configuration**
+11. **Save Configuration**
     - Click "Save & Reboot"
     - Device will reboot in 10 seconds
     - If WiFi connection succeeds, AP mode will be disabled
@@ -430,43 +408,43 @@ Button --[10kΩ]-- 3.3V
 ## Configuring the FritzBox for your SIP/VoIP/IP Doorbell
 Other VoIP capable routers potentially similar (or worldwide VoIP services?)
 
-- First, login to your FritzBox admin portal.
-- Then, go to "Telephony" -> "Telephony Devices" -> "Configure New Device".
-- Choose "Door intercom system" and Next.
+### Important: The Doorbell needs a fixed IP address. Register at FritzBox after first connect to WIFI and use above.
+
+- First, login to your **FritzBox** admin portal.
+- Then, go to **"Telephony"** -> **"Telephony Devices"** -> **"Configure New Device"**.
+- Choose **"Door intercom system"** and **Next**.
 
 + Port: "LAN / Wi-Fi (IP door intercom system)".
 + Name: Tuerklingel.
 
-
 ![image info](./images/Fritz_Doorbell_Wizard-page1.png)
 Register a new "Intercom" IP Device
 
-
-SIP user and Password (also note the IP of your FritzBox)
+### SIP user and Password (also note the IP of your FritzBox)
 ![image info](./images/Fritz_Doorbell_Wizard-page2.png)
 
 
-We need this telephone number for the configuration on the ESP.
+### We need this telephone number for the configuration on the ESP.
 ![image info](./images/Fritz_Doorbell_Wizard-page3.png)
 
 
-You could route this to all phones or a subset of phones.
+### You could route this to all phones or a subset of phones.
 ![image info](./images/Fritz_Doorbell_Wizard-page3-combo.png)
 
 
-Check the Settings and apply
+### Check the Settings and apply
 ![image info](./images/Fritz_Doorbell_Wizard-page4.png)
 
 
-List of all registered devices. You can edit anytime with the pen-symbol:
+### List of all registered devices. You can edit anytime with the pen-symbol:
 ![image info](./images/Fritz_Doorbell_Overview-page1.png)
 
 
-Leave the lower part empty (..for the next fancy project with ESP32-CAM?)
+### Leave the lower part empty (..for the next fancy project with ESP32-CAM?)
 ![image info](./images/Fritz_Doorbell_Overview-page2.png)
 
 
-If you forgot to note your SIP-passord/credentials, change here:
+### If you forgot to note your SIP-passord/credentials, change here:
 ![image info](./images/Fritz_Doorbell_Overview-page2b.png)
 
 
