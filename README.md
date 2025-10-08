@@ -380,12 +380,54 @@ For issues not covered here:
 8. Adjust settings as needed
 
 
+## TODO: Connecting to the doorbell
+
+
 For deep sleep wake functionality, you need to wire the doorbell button:
+```
 Button --[10kΩ]-- 3.3V
        |
        +---------- RST pin
        |
        +---------- GND (when pressed)
+```
+
+
+```
+         +--------------------+
+         |                    |
+      Klingeltrafo         Switch
+         |                    |
+     ----+----+         +-----+-----+
+          |  |         |           |
+          | Klingel     R1          |
+          |  |         |           |
+          +--+---------+           |
+             |                     |
+          1N 4148                  |
+             |                     |
+             +----------+----------+
+                        |
+                  +------+------+
+                  |  PC 817     |
+                  | 1       4   |
+                  | 2       3   |
+                  +------+------+
+                     |      |
+                     |      |
+                   Reset   GND
+```
+
+
+| DoorBell Transformer |        |
+| (AC current)    |  R1     |
+|-----------------|----------|
+| 8 V            | 330 Ohm  |
+| 12 V           | 560 Ohm  |
+| 24 V           | 1,2 kOhm |
+
+
+## TODO: configuring the SIP/VoIP/IP Doorbell at your FritzBox
 
 
        
