@@ -45,20 +45,23 @@ But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity
 
 ### Initial Configuration
 
-0. ** Register Settings at FritzBox **
-   - Ensure, you have all the information
+0. **Register Settings at FritzBox**
+   - Ensure, you have your WIFI SSID and password at hand.
+   - You will also need the IP of your FritzBox (192.168.xx.xx).
+   - If you decide to do the Fritzbox-sided registration of the IP-Doorbell first (see below), you should have the SIP user and SIP password as well. Otherwise, enter later.
 
 2. **Power on the ESP8266**
    - On first boot, default WiFi credentials won't work
    - Device automatically starts AP mode for configuration
 
 3. **Connect to the Configuration AP**
-   - SSID: `ESP-Doorbell-Config`
-   - Password: `12345678`
-   - Device IP: `192.168.4.1`
+   - SSID: **`ESP-Doorbell-Config`**
+   - Password: **`12345678`**
+   - _Note: If you connect with your mobile phone, you might have to confirm, you want to stay connected to a netwok without internet access!_
+   - Device IP: `192.168.4.1` (use Chrome), e.g. on a mobile phone in **same** network
 
 4. **Open the Configuration Portal**
-   - Open browser and navigate to: `http://192.168.4.1`
+   - Open browser and navigate to: **`http://192.168.4.1`**
    - You'll see the main configuration page
 
 5. **Configure WiFi Settings**
@@ -67,18 +70,18 @@ But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity
    - **Hostname**: Device hostname (default: ESP-Doorbell)
 
 6. **Configure Network Settings**
-   - **Use DHCP**: Check for automatic IP (recommended for most users)
-   - **Static IP**: Only if DHCP is unchecked (e.g., 192.168.178.123)
+   - **Use DHCP**: Check for automatic IP (static IP recommended for most users - speeds up the startup)
+   - **Static IP**: the static IP of the doorbell (e.g., 192.168.178.123), if DHCP is unchecked.. TODO: could be removed at all?
    - **Router/Gateway**: Your FritzBox IP (e.g., 192.168.178.1)
    - **Subnet Mask**: Usually 255.255.255.0
 
 7. **Configure SIP Settings** (Critical!)
    - **SIP Port**: Usually 5060 (FritzBox default)
-   - **SIP User**: Phone extension username (e.g., "tuerklingel")
-   - **SIP Password**: Extension password from FritzBox
-   - **Dial Number**: Number to dial (e.g., **9 for all phones, or specific extension)
+   - **SIP User**: SIP username as configured at FritzBox (e.g., "tuerklingel")
+   - **SIP Password**: SIP password from FritzBox
+   - **Dial Number**: Number to dial (e.g., **9 to ring at all phones, or specific extension, e.g. "1" - as configured at FritzBox)
    - **Dial Text**: Caller ID text (e.g., "Front Door")
-   - **Ring Duration**: How long phones ring (default: 30 seconds)
+   - **Ring Duration**: How long phones should ring (default: 30 seconds)
 
 8. **Configure Debug Options**
    - **Serial Debug**: Enable for USB/UART debugging
@@ -89,8 +92,7 @@ But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity
    - **NTP Server**: Time server (default: pool.ntp.org)
    - **Timezone Offset**: Seconds from UTC
      - UTC+1 (CET): 3600
-     - UTC+2 (CEST): 7200
-     - UTC-5 (EST): -18000
+     - UTC+2 (CEST): **7200**
 
 10. **Configure Power Management**
    - **Sleep Timeout**: Seconds before deep sleep (default: 180)
@@ -102,31 +104,57 @@ But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity
     - Device will reboot in 10 seconds
     - If WiFi connection succeeds, AP mode will be disabled
     - If WiFi fails, AP mode will remain active for reconfiguration
-
 ---
 
-## 📞 FritzBox SIP Configuration
+## 📞 FritzBox SIP Configuration for the doorbell
+
+Other VoIP capable routers potentially similar (or worldwide VoIP services?)
+
+### Important: The Doorbell needs a fixed IP address. Register at FritzBox after first connect to WIFI and use above.
 
 ### Creating a Doorbell Extension
 
-1. **Log into FritzBox**
+ ### **Log into FritzBox**
    - Navigate to `http://fritz.box`
-   - Go to "Telephony" → "Telephone Numbers"
+   - Login to your **FritzBox** admin portal.
+   - Go to **"Telephony"** -> **"Telephony Devices"** -> **"Configure New Device"**.
+   - Choose **"Door intercom system"** and **Next**.
 
-2. **Create New Phone Extension**
-   - Click "New Device"
-   - Select "Telephone (with or without answering machine)"
-   - Give it a name (e.g., "Tuerklingel" or "Doorbell")
-   - Assign a username and password (use these in ESP config)
+   ### **Register new Device/SIP credentials**
+      + Port: "LAN / Wi-Fi (IP door intercom system)".
+      + Name: Tuerklingel.
+   
+   ![image info](./images/Fritz_Doorbell_Wizard-page1.png)
+   Register a new "Intercom" IP Device
 
-3. **Configure Call Routing**
-   - For **9 dialing: Go to "Telephony" → "Call Handling"
-   - Set up internal call rules if needed
-   - **9 typically rings all registered phones
+   ### SIP user and Password (also note the IP of your FritzBox)
+   ![image info](./images/Fritz_Doorbell_Wizard-page2.png)
+   
+   
+   ### We need this telephone number for the configuration on the ESP.
+   ![image info](./images/Fritz_Doorbell_Wizard-page3.png)
+   
+   
+   ### You could route this to all phones or a subset of phones.
+   ![image info](./images/Fritz_Doorbell_Wizard-page3-combo.png)
+   
+   
+   ### Check the Settings and apply
+   ![image info](./images/Fritz_Doorbell_Wizard-page4.png)
+   
+   
+   ### List of all registered devices. You can edit anytime with the pen-symbol:
+   ![image info](./images/Fritz_Doorbell_Overview-page1.png)
+   
+   
+   ### Leave the lower part empty (..for the next fancy project with ESP32-CAM?)
+   ![image info](./images/Fritz_Doorbell_Overview-page2.png)
+   
+   
+   ### If you forgot to note your SIP-passord/credentials, change here:
+   ![image info](./images/Fritz_Doorbell_Overview-page2b.png)
+   
 
-4. **Test the Extension**
-   - Note the username, password, and dial number
-   - Enter these in the ESP8266 configuration
 
 ---
 
@@ -134,10 +162,8 @@ But again: This ESP-Software is **not** TR064 based, but uses SIP for simplicity
 
 ### Basic Wiring (Power-on Reset)
 ```
-Doorbell Button → GPIO0 (D3) and GND
 Power Supply → 3.3V/5V and GND
 ```
-
 ### Deep Sleep Wiring (Recommended)
 ```
 Doorbell Button → RST pin and GND (via 10kΩ pull-up)
@@ -405,47 +431,6 @@ Button --[10kΩ]-- 3.3V
 | 24 V           | 1,2 kOhm |
 
 
-## Configuring the FritzBox for your SIP/VoIP/IP Doorbell
-Other VoIP capable routers potentially similar (or worldwide VoIP services?)
-
-### Important: The Doorbell needs a fixed IP address. Register at FritzBox after first connect to WIFI and use above.
-
-- First, login to your **FritzBox** admin portal.
-- Then, go to **"Telephony"** -> **"Telephony Devices"** -> **"Configure New Device"**.
-- Choose **"Door intercom system"** and **Next**.
-
-+ Port: "LAN / Wi-Fi (IP door intercom system)".
-+ Name: Tuerklingel.
-
-![image info](./images/Fritz_Doorbell_Wizard-page1.png)
-Register a new "Intercom" IP Device
-
-### SIP user and Password (also note the IP of your FritzBox)
-![image info](./images/Fritz_Doorbell_Wizard-page2.png)
-
-
-### We need this telephone number for the configuration on the ESP.
-![image info](./images/Fritz_Doorbell_Wizard-page3.png)
-
-
-### You could route this to all phones or a subset of phones.
-![image info](./images/Fritz_Doorbell_Wizard-page3-combo.png)
-
-
-### Check the Settings and apply
-![image info](./images/Fritz_Doorbell_Wizard-page4.png)
-
-
-### List of all registered devices. You can edit anytime with the pen-symbol:
-![image info](./images/Fritz_Doorbell_Overview-page1.png)
-
-
-### Leave the lower part empty (..for the next fancy project with ESP32-CAM?)
-![image info](./images/Fritz_Doorbell_Overview-page2.png)
-
-
-### If you forgot to note your SIP-passord/credentials, change here:
-![image info](./images/Fritz_Doorbell_Overview-page2b.png)
 
 
 
