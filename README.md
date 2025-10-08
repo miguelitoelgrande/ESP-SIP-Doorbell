@@ -427,7 +427,42 @@ Button --[10kΩ]-- 3.3V
 | 24 V           | 1,2 kOhm |
 
 
-## TODO: configuring the SIP/VoIP/IP Doorbell at your FritzBox
+## Configuring the FritzBox for your SIP/VoIP/IP Doorbell
+Other VoIP capable routers potentially similar (or worldwide VoIP services?)
+
+- First, login to your FritzBox admin portal.
+- Then, go to "Telephony" -> "Telephony Devices" -> "Configure New Device".
+- Choose "Door intercom system" and Next.
+
++ Port: "LAN / Wi-Fi (IP door intercom system)".
++ Name: Tuerklingel.
+
+![image info](./images/Fritz_Doorbell_Wizard-page1.png)
+Register a new "Intercom" IP Device
+
+SIP user and Password (also note the IP of your FritzBox)
+![image info](./images/Fritz_Doorbell_Wizard-page2.png)
+
+We need this telephone number for the configuration on the ESP.
+![image info](./images/Fritz_Doorbell_Wizard-page3.png)
+
+You could route this to all phones or a subset of phones.
+![image info](./images/Fritz_Doorbell_Wizard-page3-combo.png)
+
+Check the Settings and apply
+![image info](./images/Fritz_Doorbell_Wizard-page4.png)
+
+List of all registered devices. You can edit anytime with the pen-symbol:
+![image info](./images/Fritz_Doorbell_Overview-page1.png)
+
+Leave the lower part empty (..for the next fancy project with ESP32-CAM?)
+![image info](./images/Fritz_Doorbell_Overview-page2.png)
+
+If you forgot to note your SIP-passord/credentials, change here:
+![image info](./images/Fritz_Doorbell_Overview-page2b.png)
+
+
+
 
 
        
