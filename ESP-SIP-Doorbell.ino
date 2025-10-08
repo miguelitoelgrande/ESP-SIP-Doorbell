@@ -32,28 +32,10 @@ void debugPrintf(const char* format, ...);
 #define DEBUG_PRINTF(...) debugPrintf(__VA_ARGS__)
 
 // ====================================================================
-// EVENT LOG STRUCTURE
-// ====================================================================
-#define MAX_EVENTS 100  // Increased from 50 since we removed timeStr
-
-struct DoorbellEvent {
-  unsigned long timestamp;  // Unix timestamp
-  bool sipSuccess;         // Was SIP call successful
-  uint8_t wakeReason;      // Reset reason (using uint8_t to save space)
-};
-
-struct EventLog {
-  int count;               // Total events logged
-  int writeIndex;          // Next write position (ring buffer)
-  DoorbellEvent events[MAX_EVENTS];
-};
-
-// ====================================================================
 // CONFIGURATION STRUCTURE
 // ====================================================================
 #define CONFIG_VERSION "CFG3"
 #define CONFIG_START 0
-#define EVENTLOG_START 1024  // Leave space for config expansion
 
 struct Config {
   char version[5];
@@ -96,6 +78,25 @@ struct Config {
 };
 
 Config config;
+
+// ====================================================================
+// EVENT LOG STRUCTURE
+// ====================================================================
+#define MAX_EVENTS 100  // Increased from 50 since we removed timeStr
+#define EVENTLOG_START 1024  // Leave space for config expansion
+
+struct DoorbellEvent {
+  unsigned long timestamp;  // Unix timestamp
+  bool sipSuccess;         // Was SIP call successful
+//  uint8_t wakeReason;      // Reset reason (using uint8_t to save space)
+};
+
+struct EventLog {
+  int count;               // Total events logged
+  int writeIndex;          // Next write position (ring buffer)
+  DoorbellEvent events[MAX_EVENTS];
+};
+
 EventLog eventLog;
 
 // ====================================================================
@@ -191,7 +192,7 @@ void saveConfig();
 void setDefaultConfig();
 void loadEventLog();
 void saveEventLog();
-void logDoorbellEvent(bool success, int reason);
+void logDoorbellEvent(bool success);
 void setupAP();
 void setupWebServer();
 void handleRoot();
@@ -233,6 +234,7 @@ void setup() {
   DEBUG_PRINTF("[EEPROM]   Max address used: %d\n", EVENTLOG_START + sizeof(EventLog));
   
   EEPROM.begin(eepromSize);
+
   loadConfig();
   loadEventLog();
   
@@ -416,7 +418,7 @@ void setup() {
   
   // Log event if doorbell was pressed
   if (doorbellPressed) {
-    logDoorbellEvent(sipCallSuccess, wakeReason);
+    logDoorbellEvent(sipCallSuccess);
   }
   
   // Set up AP if needed
@@ -475,14 +477,14 @@ void loop() {
     } else {
       DEBUG_PRINTLN("");
     }
-    DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
+    // DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
     DEBUG_PRINTF("  Uptime: %lu seconds\n", millis() / 1000);
     if (config.lightSleepEnabled && config.inactivitySleepTimeout > 0) {
       int timeLeft = config.inactivitySleepTimeout - ((millis() - lastActivityTime) / 1000);
       DEBUG_PRINTF("  Light sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
     }
-    DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : (sipCallAttempted ? "FAILED" : "NONE"));
-    DEBUG_PRINTF("  Total doorbell events: %d\n", eventLog.count);
+    // DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : (sipCallAttempted ? "FAILED" : "NONE"));
+    // DEBUG_PRINTF("  Total doorbell events: %d\n", eventLog.count);
     lastDebugTime = millis();
   }
   
@@ -511,6 +513,7 @@ void loop() {
 void loadConfig() {
   EEPROM.get(CONFIG_START, config);
   
+
   if (strcmp(config.version, CONFIG_VERSION) != 0) {
     Serial.println("[CONFIG] No valid config, loading defaults");
     setDefaultConfig();
@@ -579,9 +582,16 @@ void loadEventLog() {
   
   EEPROM.get(EVENTLOG_START, eventLog);
   
+  /*
+    // MM: quick and dirty flush old log..
+    eventLog.count = -1;
+    eventLog.writeIndex = -1;
+  */
+  /*
   DEBUG_PRINTF("[EVENT] Raw loaded values - count=%d, writeIndex=%d\n", 
                eventLog.count, eventLog.writeIndex);
-  
+  */
+
   // Validate
   if (eventLog.count < 0 || eventLog.count > 100000 || 
       eventLog.writeIndex < 0 || eventLog.writeIndex >= MAX_EVENTS) {
@@ -604,11 +614,10 @@ void loadEventLog() {
       for (int i = 0; i < toShow; i++) {
         int index = (eventLog.writeIndex - 1 - i + MAX_EVENTS) % MAX_EVENTS;
         DoorbellEvent& evt = eventLog.events[index];
-        DEBUG_PRINTF("[EVENT]   #%d: %s - %s (reason=%d)\n", 
+        DEBUG_PRINTF("[EVENT]   #%d: %s - %s\n", 
                      eventLog.count - i, 
                      formatTime(evt.timestamp).c_str(),
-                     evt.sipSuccess ? "SUCCESS" : "FAILED",
-                     evt.wakeReason);
+                     evt.sipSuccess ? "SUCCESS" : "FAILED");
       }
     }
   }
@@ -622,18 +631,17 @@ void saveEventLog() {
   DEBUG_PRINTF("[EVENT] saveEventLog() commit result: %s\n", result ? "SUCCESS" : "FAILED");
 }
 
-void logDoorbellEvent(bool success, int reason) {
+void logDoorbellEvent(bool success) {
   time_t now = time(nullptr);
   
-  DEBUG_PRINTF("[EVENT] Logging event - timestamp=%lu, success=%d, reason=%d\n", 
-               (unsigned long)now, success ? 1 : 0, reason);
+  DEBUG_PRINTF("[EVENT] Logging event - timestamp=%lu, success=%d\n", 
+               (unsigned long)now, success ? 1 : 0);
   DEBUG_PRINTF("[EVENT] Current state BEFORE - count=%d, writeIndex=%d\n", 
                eventLog.count, eventLog.writeIndex);
   
   DoorbellEvent event;
   event.timestamp = now;
   event.sipSuccess = success;
-  event.wakeReason = (uint8_t)reason;
   
   // Store in ring buffer at current write position
   eventLog.events[eventLog.writeIndex] = event;
@@ -729,9 +737,10 @@ void syncTime() {
   
   if (now > 1577836800) {
     DEBUG_PRINTLN("[TIME] ✓ Time synchronized successfully!");
-    DEBUG_PRINTF("[TIME] Unix timestamp: %lu\n", now);
+    // DEBUG_PRINTF("[TIME] Unix timestamp: %lu\n", now);
     DEBUG_PRINTF("[TIME] Current time: %s\n", formatTime(now).c_str());
     
+    /*
     // Verify the time makes sense
     struct tm* timeinfo = localtime(&now);
     if (timeinfo) {
@@ -739,6 +748,7 @@ void syncTime() {
                    timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
                    timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
     }
+    */
   } else {
     DEBUG_PRINTLN("[TIME] ✗ Time sync FAILED - using default");
     DEBUG_PRINTF("[TIME] Last timestamp received: %lu\n", now);
@@ -817,6 +827,22 @@ void handleRoot() {
   html += "<div class='container'>";
   html += "<h1>🔔 ESP Doorbell Configuration</h1>";
   
+  // main page navigation
+  html += "<div class='navigation'>";
+  html += "<a href='/events'>View Events</a> | ";
+  html += "<a href='/status'>System Status</a> | ";
+  html += "<a href='/webserial'>WebSerial</a> <br>";
+  html += "</div>";
+
+  // Info box
+  html += "<div class='info'>";
+  html += "<strong>WiFi:</strong> " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "<br>";
+  if (WiFi.status() == WL_CONNECTED) {
+    html += "<strong>IP:</strong> " + WiFi.localIP().toString() + "<br>";
+  }
+  html += "<strong>Events Logged:</strong> " + String(eventLog.count);
+  html += "</div>";
+  
   // Status box
   html += "<div class='";
   if (sipCallSuccess) {
@@ -826,16 +852,7 @@ void handleRoot() {
   }
   html += "</div>";
   
-  html += "<div class='info'>";
-  html += "<strong>WiFi:</strong> " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "<br>";
-  if (WiFi.status() == WL_CONNECTED) {
-    html += "<strong>IP:</strong> " + WiFi.localIP().toString() + "<br>";
-  }
-  html += "<strong>Events Logged:</strong> " + String(eventLog.count) + " | ";
-  html += "<a href='/events'>View Events</a> | ";
-  html += "<a href='/status'>System Status</a> | ";
-  html += "<a href='/webserial'>WebSerial</a>";
-  html += "</div>";
+ 
   
   html += "<form method='POST' action='/save'>";
   
@@ -850,29 +867,29 @@ void handleRoot() {
   html += "<h2>🌐 Network Settings</h2>";
   html += "<label><input type='checkbox' name='useDHCP' value='1' " + String(config.useDHCP ? "checked" : "") + "> Use DHCP</label>";
   html += "<label>Static IP:</label><input type='text' name='ip' value='" + String(config.ip) + "'>";
+  html += "<small>prefer static IP for faster connects. Assign a static IP for this Doorbell at the FritzBox first</small><br>";
   html += "<label>Router/Gateway:</label><input type='text' name='router' value='" + String(config.router) + "'>";
   html += "<label>Subnet Mask:</label><input type='text' name='subnet' value='" + String(config.subnet) + "'>";
   
   // SIP Settings
   html += "<h2>📞 SIP Settings</h2>";
+  html += "<small>register a phone device of type 'IP Door Intercom System' at your FritzBox to obtain the data</small><br>";
+  
   html += "<label>SIP Port:</label><input type='number' name='sipPort' value='" + String(config.sipPort) + "' required>";
   html += "<label>SIP User:</label><input type='text' name='sipUser' value='" + String(config.sipUser) + "' required>";
   html += "<label>SIP Password:</label><input type='password' name='sipPassword' value='" + String(config.sipPassword) + "'>";
   html += "<label>Dial Number:</label><input type='text' name='dialNumber' value='" + String(config.dialNumber) + "' required>";
+  html += "<small>Examples: use '1', so you can configure via FritzBox 'doorbell button 1' or '**9' which should ring on all phones registered at FritzBox</small><br>";
   html += "<label>Dial Text:</label><input type='text' name='dialText' value='" + String(config.dialText) + "'>";
+  html += "<small>Example: 'Tuerklingel' - not shown in all cases</small><br>";
   html += "<label>Ring Duration (sec):</label><input type='number' name='ringDuration' value='" + String(config.ringDuration) + "' min='5' max='120' required>";
-  
-  // Debug Settings
-  html += "<h2>🐛 Debug Settings</h2>";
-  html += "<label><input type='checkbox' name='debugSerial' value='1' " + String(config.debugSerial ? "checked" : "") + "> Serial Debug</label>";
-  html += "<label><input type='checkbox' name='debugWebSerial' value='1' " + String(config.debugWebSerial ? "checked" : "") + "> WebSerial Debug</label>";
-  
+
   // Time Settings
   html += "<h2>🕐 Time Settings</h2>";
   html += "<label>NTP Server:</label><input type='text' name='ntpServer' value='" + String(config.ntpServer) + "'>";
   html += "<small>Default: pool.ntp.org</small>";
   html += "<label>Timezone Offset (seconds from UTC):</label><input type='number' name='timezoneOffset' value='" + String(config.timezoneOffset) + "'>";
-  html += "<small>Examples: UTC+1/CET=3600, UTC+2/CEST=7200, UTC-5/EST=-18000, UTC-8/PST=-28800</small><br>";
+  html += "<small>Examples: UTC+1/CET=3600, UTC+2/CEST=7200</small><br>";
   html += "<small>Current system time: " + formatTime(time(nullptr)) + "</small>";
   
   // Power Settings
@@ -883,6 +900,11 @@ void handleRoot() {
   html += "<small>Enter light sleep after this many seconds of inactivity (0 to disable)</small>";
   html += "<label>Legacy Deep Sleep Timeout (sec):</label><input type='number' name='sleepTimeout' value='" + String(config.sleepTimeout) + "' min='0' required>";
   html += "<small>Deep sleep timeout - only used if explicitly triggered (0 to disable)</small>";
+  
+  // Debug Settings
+  html += "<h2>🐛 Debug Settings</h2>";
+  html += "<label><input type='checkbox' name='debugSerial' value='1' " + String(config.debugSerial ? "checked" : "") + "> Serial Debug</label>";
+  html += "<label><input type='checkbox' name='debugWebSerial' value='1' " + String(config.debugWebSerial ? "checked" : "") + "> WebSerial Debug</label>";
   
   html += "<br><br>";
   html += "<button type='submit' class='button'>💾 Save & Reboot</button>";
@@ -1002,7 +1024,7 @@ void handleSave() {
   String html = "<!DOCTYPE html><html><head>";
   html += "<meta http-equiv='refresh' content='10;url=/'>";
   html += "<style>body{font-family:Arial;text-align:center;padding:50px}</style>";
-  html += "</head><body>";
+  html += "<meta charset='utf-8'></head><body>";
   html += "<h1>✓ Configuration Saved!</h1>";
   html += "<p>Device will reboot in 10 seconds...</p>";
   html += "<p>After reboot, ";
@@ -1053,7 +1075,7 @@ void handleStatus() {
   
   html += "<div class='container'>";
   html += "<h1>📊 System Status</h1>";
-  html += "<div class='nav'><a href='/'>← Config</a><a href='/events'>Events</a><a href='/webserial'>WebSerial</a></div>";
+  html += "<div class='nav'><a href='/'>← Config</a> <a href='/events'>Events</a> <a href='/webserial'>WebSerial</a></div>";
   
   html += "<div class='section'>";
   html += "<div class='section-title'>System Information</div>";
@@ -1094,11 +1116,12 @@ void handleEvents() {
   html += "<style>body{font-family:Arial;margin:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:8px;text-align:left}th{background:#4CAF50;color:white}.success{color:#28a745;font-weight:bold}.fail{color:#dc3545;font-weight:bold}</style>";
   html += "</head><body>";
   html += "<h1>🔔 Doorbell Event Log</h1>";
-  html += "<p><a href='/'>← Back to Config</a></p>";
+  html += "<p><a href='/'>← Config</a> <a href='/status'>Status</a>  <a href='/webserial'>WebSerial</a></p>";
+
   html += "<p><strong>Total Events:</strong> " + String(eventLog.count) + " | ";
   html += "<strong>Storage:</strong> " + String(MAX_EVENTS) + " events max</p>";
   
-  html += "<table><tr><th>#</th><th>Date & Time</th><th>Status</th><th>Wake Reason</th></tr>";
+  html += "<table><tr><th>#</th><th>Date & Time</th><th>Status</th></tr>";
   
   // Show events in reverse order (newest first)
   int displayCount = min(eventLog.count, MAX_EVENTS);
@@ -1112,7 +1135,8 @@ void handleEvents() {
     html += "<td class='" + String(event.sipSuccess ? "success" : "fail") + "'>";
     html += event.sipSuccess ? "✓ SUCCESS" : "✗ FAILED";
     html += "</td>";
-    html += "<td>";
+    // html += "<td>";
+    /*
     switch(event.wakeReason) {
       case REASON_DEFAULT_RST: html += "Power-on"; break;
       case REASON_DEEP_SLEEP_AWAKE: html += "Deep Sleep Wake"; break;
@@ -1124,6 +1148,8 @@ void handleEvents() {
       default: html += "Unknown (" + String(event.wakeReason) + ")"; break;
     }
     html += "</td></tr>";
+    */
+    html += "</tr>";
   }
   
   if (displayCount == 0) {
@@ -1152,7 +1178,8 @@ void handleWebSerial() {
   html += "</head><body>";
   html += "<div class='container'>";
   html += "<h2 style='color:#4CAF50'>🖥️ WebSerial Debug Console</h2>";
-  html += "<p><a href='/'>← Back to Config</a> | Auto-refresh: 5s</p>";
+  html += "<p><a href='/'>← Back to Config</a> <a href='/status'>Status</a> <a href='/events'>Events</a> | Auto-refresh: 5s</p>";
+
   
   if (config.debugWebSerial) {
     html += "<pre>" + String(webSerialBuffer) + "</pre>";
@@ -1210,7 +1237,7 @@ void handleDoorbellPress() {
     DEBUG_PRINTLN("[DOORBELL] ERROR: WiFi not connected!");
     blinkLED(10, 100);
     digitalWrite(LED_PIN, HIGH);
-    logDoorbellEvent(false, REASON_EXT_SYS_RST);
+    logDoorbellEvent(false);
     return;
   }
   
@@ -1254,7 +1281,7 @@ void handleDoorbellPress() {
   DEBUG_PRINTLN("====================================\n");
   
   // Log the event
-  logDoorbellEvent(true, REASON_EXT_SYS_RST);
+  logDoorbellEvent(true);
   
   sipCallSuccess = true;
   sipCallAttempted = true;
@@ -1352,5 +1379,3 @@ void blinkLED(int times, int delayMs) {
     delay(delayMs);
   }
 }
-
-
