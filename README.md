@@ -256,6 +256,12 @@ Other VoIP capable routers potentially similar (or worldwide VoIP services?)
 
 ## 🔌 TODO: Connecting to the doorbell
 
+### Last minute change...
+
+Now, the Doorbell button (circuit) needs to connect to a GPIO pin found in the code (DOORBELL_PIN). This allows for WIFI wakeup and also unwanted Reset action during EEPROM ops , etc. (to be on the safe side)
+
+GPIO14 (== D5 on NodeMCU), Connect doorbell button here (active LOW with pullup)
+
 ### Basic Wiring (Power-on Reset)
 ```
 Power Supply → 3.3V/5V and GND
