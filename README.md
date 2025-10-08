@@ -1,6 +1,10 @@
 # ESP-SIP-Doorbell
 Attach an ESP8266 board to a classic doorbell and use SIP protocol to make the phones connected to a FritzBox ring.
 
+Hardware setup can be found here: https://www.reichelt.de/magazin/projekte/smarte-tuerklingel/
+Again: This version is not TR064 based, but uses SIP for simplicity.
+
+
 # ESP8266 SIP Doorbell - Getting Started Guide
 
 ## 🔔 Overview
