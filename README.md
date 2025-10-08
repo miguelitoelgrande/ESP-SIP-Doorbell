@@ -397,31 +397,15 @@ Button --[10kΩ]-- 3.3V
 ```
 
 
-```
-         +--------------------+
-         |                    |
-      Klingeltrafo         Switch
-         |                    |
-     ----+----+         +-----+-----+
-          |  |         |           |
-          | Klingel     R1          |
-          |  |         |           |
-          +--+---------+           |
-             |                     |
-          1N 4148                  |
-             |                     |
-             +----------+----------+
-                        |
-                  +------+------+
-                  |  PC 817     |
-                  | 1       4   |
-                  | 2       3   |
-                  +------+------+
-                     |      |
-                     |      |
-                   Reset   GND
-```
 
+
+  ![Schematics](./schematics/Klingelschaltung-Optokoppler.png)
+
+> Hauptbestandteil ist ein Optokoppler (PC817), der zwei Stromkreise über eine Lichtbrücke trennt. Damit die LED des PC817 die korrekte Betriebsspannung von 1,2 Volt erhält, ist ein passender Vorwiderstand von 330 Ohm (8 Volt), 560 Ohm (12 Volt) oder 1,2 Kiloohm (24 Volt) erforderlich. Bei 24 V müsste der Widerstand eigentlich 0,5 W aushalten, da in der Regel aber nur wenige Sekunden geklingelt wird, hält auch die 0,25-W-Variante stand. Hat man jedoch Dauerdrücker im Freundeskreis, sollte man vorsichtshalber die 0,5-W-Variante wählen.
+
+> Der Vorwiderstand senkt die Spannung in Durchlassrichtung der Optokoppler-LED zwar ab, jedoch ist bei Wechselspannung auch die Gegenrichtung zu berücksichtigen. Die Durchbruchspannung der LED im PC817 beträgt lediglich 6 Volt. Eine antiparallele Diode führt die gegenläufige Wechselspannung über den Widerstand ab und verhindert so, dass der Optokoppler beschädigt wird. Erfahrene Bastler werden hier schnell bemerken, dass der Ausgang des Optokopplers beim Betätigen des Klingetasters mit der Netzfrequenz pulsiert. Für den Raspberry Pi ist dies jedoch kein Problem. Mittels Polling-Schleife erkennt er die Impulse zuverlässig.
+
+_Source: https://www.heise.de/select/ct/2017/17/1502995489716437_
 
 
 | DoorBell Transformer<br>(AC current)    |  R1     |
