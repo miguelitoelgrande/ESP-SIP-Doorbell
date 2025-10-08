@@ -53,7 +53,7 @@ struct EventLog {
 // ====================================================================
 #define CONFIG_VERSION "CFG3"
 #define CONFIG_START 0
-#define EVENTLOG_START 512
+#define EVENTLOG_START 1024  // Leave space for config expansion
 
 struct Config {
   char version[5];
@@ -79,6 +79,8 @@ struct Config {
   
   // Deep sleep settings
   int sleepTimeout;
+  int lightSleepEnabled;  // 0=disabled, 1=enabled
+  int inactivitySleepTimeout;  // Seconds of inactivity before light sleep
   
   // AP mode settings
   char apSSID[32];
@@ -102,11 +104,22 @@ EventLog eventLog;
 ESP8266WebServer server(80);
 WiFiUDP ntpUDP;
 
-const int LED_PIN = 2;
+// ====================================================================
+// HARDWARE CONFIGURATION
+// ====================================================================
+#define LED_PIN 2
+#define DOORBELL_PIN 14  // D5 on NodeMCU, change as needed. Connect doorbell button here (active LOW with pullup)
+
+// Debounce settings
+#define DEBOUNCE_MS 500  // Minimum time between doorbell presses
+#define BUTTON_HOLD_MS 100  // Button must be pressed this long to be valid
 
 unsigned long lastActivityTime = 0;
+unsigned long lastDoorbellPress = 0;
 bool sipCallAttempted = false;
 bool sipCallSuccess = false;
+bool doorbellPressed = false;
+volatile bool doorbellInterruptFlag = false;
 Sip* aSip = nullptr;
 
 char caSipIn[2048];
@@ -189,7 +202,10 @@ void handleWebSerial();
 void connectWiFi();
 void syncTime();
 void makeEmergencySIPCall();
-void checkDeepSleep();
+void checkLightSleep();
+void enterLightSleep();
+void IRAM_ATTR doorbellISR();
+void handleDoorbellPress();
 void blinkLED(int times, int delayMs);
 String formatTime(unsigned long timestamp);
 
@@ -201,15 +217,20 @@ void setup() {
   Serial.begin(DEBUG_SERIAL_BAUD);
   delay(50);
   
-  // Initialize LED
+  // Initialize hardware pins
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW); // LED on - we're calling!
+  digitalWrite(LED_PIN, LOW); // LED on - we're starting!
+  
+  pinMode(DOORBELL_PIN, INPUT_PULLUP);  // Doorbell button with internal pullup
   
   // Load config first (need it for everything)
-  int eepromSize = 1024 + sizeof(EventLog); // Config space + EventLog space
-  DEBUG_PRINTF("[EEPROM] Initializing with size: %d bytes\n", eepromSize);
+  // Calculate required EEPROM size: EventLog start + EventLog size + safety margin
+  int eepromSize = EVENTLOG_START + sizeof(EventLog) + 64; // Add 64 byte safety margin
+  DEBUG_PRINTF("[EEPROM] Initializing EEPROM emulation\n");
+  DEBUG_PRINTF("[EEPROM]   Required size: %d bytes\n", eepromSize);
   DEBUG_PRINTF("[EEPROM]   Config: %d bytes at offset %d\n", sizeof(Config), CONFIG_START);
   DEBUG_PRINTF("[EEPROM]   EventLog: %d bytes at offset %d\n", sizeof(EventLog), EVENTLOG_START);
+  DEBUG_PRINTF("[EEPROM]   Max address used: %d\n", EVENTLOG_START + sizeof(EventLog));
   
   EEPROM.begin(eepromSize);
   loadConfig();
@@ -220,142 +241,183 @@ void setup() {
   int wakeReason = resetInfo->reason;
   
   DEBUG_PRINTLN("\n====================================");
-  DEBUG_PRINTLN("ESP8266 SIP DOORBELL - PRIORITY WAKE");
+  DEBUG_PRINTLN("ESP8266 SIP DOORBELL - LIGHT SLEEP");
   DEBUG_PRINTLN("====================================");
   DEBUG_PRINTF("[WAKE] Reset reason: %d\n", wakeReason);
   
-  // ====================================================================
-  // PRIORITY 1: ESTABLISH SIP CALL IMMEDIATELY
-  // ====================================================================
-  DEBUG_PRINTLN("[PRIORITY] Attempting immediate SIP call...");
-  DEBUG_PRINTF("[PRIORITY] WiFi SSID: %s\n", config.ssid);
-  blinkLED(1, 50);
+  // Check if doorbell button is pressed (active LOW)
+  bool doorbellPressedOnBoot = (digitalRead(DOORBELL_PIN) == LOW);
   
-  // Disconnect any previous connections
-  WiFi.disconnect(true);
-  delay(100);
-  
-  // Quick WiFi connect (no fancy setup, just connect)
-  WiFi.mode(WIFI_STA);
-  WiFi.persistent(false);
-  WiFi.hostname(config.hostname);
-  
-  if (!config.useDHCP) {
-    DEBUG_PRINTLN("[PRIORITY] Using static IP configuration");
-    IPAddress ip, gw, subnet, dns;
-    if (ip.fromString(config.ip) && gw.fromString(config.router) && 
-        subnet.fromString(config.subnet) && dns.fromString(config.router)) {
-      WiFi.config(ip, gw, subnet, dns);
-      DEBUG_PRINTF("[PRIORITY] Static IP: %s, Gateway: %s\n", config.ip, config.router);
+  if (doorbellPressedOnBoot) {
+    DEBUG_PRINTLN("[DOORBELL] Button pressed on boot!");
+    
+    // Wait for stable press (debounce)
+    delay(BUTTON_HOLD_MS);
+    if (digitalRead(DOORBELL_PIN) == LOW) {
+      DEBUG_PRINTLN("[DOORBELL] Valid button press detected");
+      doorbellPressed = true;
     } else {
-      DEBUG_PRINTLN("[PRIORITY] ERROR: Invalid static IP config, using DHCP");
-    }
-  } else {
-    DEBUG_PRINTLN("[PRIORITY] Using DHCP");
-  }
-  
-  DEBUG_PRINTLN("[PRIORITY] Starting WiFi connection...");
-  WiFi.begin(config.ssid, config.password);
-  
-  // Fast connection attempt (10 seconds max)
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 50) {
-    delay(200);
-    attempts++;
-    if (attempts % 10 == 0) {
-      DEBUG_PRINTF("[PRIORITY] Connection attempt %d/50, Status: %d\n", attempts, WiFi.status());
-      blinkLED(1, 20);
+      DEBUG_PRINTLN("[DOORBELL] Button press too short, ignoring");
     }
   }
   
-  DEBUG_PRINTF("[PRIORITY] WiFi Status after attempts: %d\n", WiFi.status());
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    DEBUG_PRINTLN("[PRIORITY] WiFi connected!");
-    DEBUG_PRINTF("[PRIORITY] IP address: %s\n", WiFi.localIP().toString().c_str());
-    DEBUG_PRINTF("[PRIORITY] Gateway: %s\n", WiFi.gatewayIP().toString().c_str());
-    DEBUG_PRINTF("[PRIORITY] RSSI: %d dBm\n", WiFi.RSSI());
+  // ====================================================================
+  // PRIORITY 1: ESTABLISH SIP CALL IF DOORBELL PRESSED
+  // ====================================================================
+  if (doorbellPressed) {
+    DEBUG_PRINTLN("[PRIORITY] Doorbell activated - attempting SIP call...");
+    DEBUG_PRINTF("[PRIORITY] WiFi SSID: %s\n", config.ssid);
+    blinkLED(1, 50);
     
-    // Initialize SIP immediately
-    aSip = new Sip(caSipOut, sizeof(caSipOut));
-    aSip->Init(config.router, config.sipPort, 
-               config.useDHCP ? WiFi.localIP().toString().c_str() : config.ip, 
-               config.sipPort, config.sipUser, config.sipPassword, config.ringDuration);
+    // Disconnect any previous connections
+    WiFi.disconnect(true);
+    delay(100);
     
-    delay(100); // Brief moment for SIP to initialize
+    // Quick WiFi connect
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(false);
+    WiFi.hostname(config.hostname);
     
-    // MAKE THE CALL!
-    DEBUG_PRINTF("[PRIORITY] Dialing: %s (%s)\n", config.dialNumber, config.dialText);
-    aSip->Dial(config.dialNumber, config.dialText);
-    sipCallAttempted = true;
-    sipCallSuccess = true;
-    
-    blinkLED(3, 100); // Success indication
-    
-    // Keep SIP active for ring duration
-    unsigned long callStart = millis();
-    while (millis() - callStart < (config.ringDuration * 1000)) {
-      int packetSize = aSip->Udp.parsePacket();
-      if (packetSize > 0) {
-        caSipIn[0] = 0;
-        packetSize = aSip->Udp.read(caSipIn, sizeof(caSipIn));
-        if (packetSize > 0) {
-          caSipIn[packetSize] = 0;
-        }
+    if (!config.useDHCP) {
+      DEBUG_PRINTLN("[PRIORITY] Using static IP configuration");
+      IPAddress ip, gw, subnet, dns;
+      if (ip.fromString(config.ip) && gw.fromString(config.router) && 
+          subnet.fromString(config.subnet) && dns.fromString(config.router)) {
+        WiFi.config(ip, gw, subnet, dns);
+        DEBUG_PRINTF("[PRIORITY] Static IP: %s, Gateway: %s\n", config.ip, config.router);
+      } else {
+        DEBUG_PRINTLN("[PRIORITY] ERROR: Invalid static IP config, using DHCP");
       }
-      aSip->HandleUdpPacket((packetSize > 0) ? caSipIn : 0);
-      delay(10);
+    } else {
+      DEBUG_PRINTLN("[PRIORITY] Using DHCP");
     }
     
-    DEBUG_PRINTLN("[PRIORITY] Call completed successfully!");
+    DEBUG_PRINTLN("[PRIORITY] Starting WiFi connection...");
+    WiFi.begin(config.ssid, config.password);
     
+    // Fast connection attempt (10 seconds max)
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 50) {
+      delay(200);
+      attempts++;
+      if (attempts % 10 == 0) {
+        DEBUG_PRINTF("[PRIORITY] Connection attempt %d/50, Status: %d\n", attempts, WiFi.status());
+        blinkLED(1, 20);
+      }
+    }
+    
+    DEBUG_PRINTF("[PRIORITY] WiFi Status after attempts: %d\n", WiFi.status());
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      DEBUG_PRINTLN("[PRIORITY] WiFi connected!");
+      DEBUG_PRINTF("[PRIORITY] IP address: %s\n", WiFi.localIP().toString().c_str());
+      DEBUG_PRINTF("[PRIORITY] Gateway: %s\n", WiFi.gatewayIP().toString().c_str());
+      DEBUG_PRINTF("[PRIORITY] RSSI: %d dBm\n", WiFi.RSSI());
+      
+      // Initialize SIP immediately
+      aSip = new Sip(caSipOut, sizeof(caSipOut));
+      aSip->Init(config.router, config.sipPort, 
+                 config.useDHCP ? WiFi.localIP().toString().c_str() : config.ip, 
+                 config.sipPort, config.sipUser, config.sipPassword, config.ringDuration);
+      
+      delay(100); // Brief moment for SIP to initialize
+      
+      // MAKE THE CALL!
+      DEBUG_PRINTF("[PRIORITY] Dialing: %s (%s)\n", config.dialNumber, config.dialText);
+      aSip->Dial(config.dialNumber, config.dialText);
+      sipCallAttempted = true;
+      sipCallSuccess = true;
+      
+      blinkLED(3, 100); // Success indication
+      
+      // Keep SIP active for ring duration
+      unsigned long callStart = millis();
+      while (millis() - callStart < (config.ringDuration * 1000)) {
+        int packetSize = aSip->Udp.parsePacket();
+        if (packetSize > 0) {
+          caSipIn[0] = 0;
+          packetSize = aSip->Udp.read(caSipIn, sizeof(caSipIn));
+          if (packetSize > 0) {
+            caSipIn[packetSize] = 0;
+          }
+        }
+        aSip->HandleUdpPacket((packetSize > 0) ? caSipIn : 0);
+        delay(10);
+      }
+      
+      DEBUG_PRINTLN("[PRIORITY] Call completed successfully!");
+      lastDoorbellPress = millis();
+      
+    } else {
+      DEBUG_PRINTLN("[PRIORITY] WiFi connection FAILED!");
+      DEBUG_PRINTF("[PRIORITY] Final Status: %d\n", WiFi.status());
+      DEBUG_PRINTF("[PRIORITY] Configured SSID: '%s'\n", config.ssid);
+      
+      if (strlen(config.ssid) < 2 || strcmp(config.ssid, "Your-WiFi-SSID") == 0) {
+        DEBUG_PRINTLN("[PRIORITY] ERROR: WiFi SSID appears to be unconfigured!");
+      }
+      
+      sipCallAttempted = true;
+      sipCallSuccess = false;
+      blinkLED(10, 100); // Error indication
+    }
+    
+    digitalWrite(LED_PIN, HIGH); // LED off
   } else {
-    DEBUG_PRINTLN("[PRIORITY] WiFi connection FAILED!");
-    DEBUG_PRINTF("[PRIORITY] Final Status: %d\n", WiFi.status());
-    DEBUG_PRINTF("[PRIORITY] Configured SSID: '%s'\n", config.ssid);
-    DEBUG_PRINTF("[PRIORITY] SSID Length: %d\n", strlen(config.ssid));
+    DEBUG_PRINTLN("[BOOT] Normal boot - no doorbell press detected");
     
-    // Check if SSID looks valid
-    if (strlen(config.ssid) < 2 || strcmp(config.ssid, "Your-WiFi-SSID") == 0) {
-      DEBUG_PRINTLN("[PRIORITY] ERROR: WiFi SSID appears to be unconfigured!");
+    // Regular WiFi connection for management
+    WiFi.disconnect(true);
+    delay(100);
+    WiFi.mode(WIFI_STA);
+    WiFi.persistent(false);
+    WiFi.hostname(config.hostname);
+    
+    if (!config.useDHCP) {
+      IPAddress ip, gw, subnet, dns;
+      if (ip.fromString(config.ip) && gw.fromString(config.router) && 
+          subnet.fromString(config.subnet) && dns.fromString(config.router)) {
+        WiFi.config(ip, gw, subnet, dns);
+      }
     }
     
-    sipCallAttempted = true;
-    sipCallSuccess = false;
-    blinkLED(10, 100); // Error indication
+    WiFi.begin(config.ssid, config.password);
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+      delay(200);
+      attempts++;
+      if (attempts % 5 == 0) {
+        DEBUG_PRINTF("[WIFI] Connecting... %d/30\n", attempts);
+      }
+    }
   }
   
-  digitalWrite(LED_PIN, HIGH); // LED off
-  
   // ====================================================================
-  // PRIORITY 2: NOW DO ALL THE OTHER STUFF
+  // PRIORITY 2: INITIALIZE MANAGEMENT SYSTEMS
   // ====================================================================
-  DEBUG_PRINTLN("\n[INIT] Call complete, initializing management systems...");
+  DEBUG_PRINTLN("\n[INIT] Initializing management systems...");
   
-  // Determine if we need AP mode
   bool needAPMode = false;
   
   if (WiFi.status() != WL_CONNECTED) {
-    // Check if config looks invalid
     if (strlen(config.ssid) < 2 || strcmp(config.ssid, "Your-WiFi-SSID") == 0) {
       DEBUG_PRINTLN("[INIT] WiFi appears unconfigured, starting AP for setup");
       needAPMode = true;
     } else {
-      DEBUG_PRINTLN("[INIT] WiFi connection failed but config exists");
-      DEBUG_PRINTLN("[INIT] Starting AP mode for troubleshooting");
+      DEBUG_PRINTLN("[INIT] WiFi connection failed, starting AP for troubleshooting");
       needAPMode = true;
     }
   } else {
-    DEBUG_PRINTLN("[INIT] WiFi connected, syncing time FIRST...");
-    // Sync time BEFORE logging event (we have time now)
+    DEBUG_PRINTLN("[INIT] WiFi connected, syncing time...");
     syncTime();
-    
-    // Give it a moment to settle
     delay(500);
   }
   
-  // NOW log the event with proper timestamp
-  logDoorbellEvent(sipCallSuccess, wakeReason);
+  // Log event if doorbell was pressed
+  if (doorbellPressed) {
+    logDoorbellEvent(sipCallSuccess, wakeReason);
+  }
   
   // Set up AP if needed
   if (needAPMode) {
@@ -373,9 +435,20 @@ void setup() {
     DEBUG_PRINTLN("[WEB] Access via AP at: http://192.168.4.1");
   }
   
+  // Attach doorbell interrupt
+  attachInterrupt(digitalPinToInterrupt(DOORBELL_PIN), doorbellISR, FALLING);
+  DEBUG_PRINTF("[DOORBELL] Interrupt attached to GPIO %d\n", DOORBELL_PIN);
+  
   lastActivityTime = millis();
-  DEBUG_PRINTLN("[INIT] Setup complete, entering management mode");
-  DEBUG_PRINTF("[SLEEP] Will sleep in %d seconds\n", config.sleepTimeout);
+  DEBUG_PRINTLN("[INIT] Setup complete, entering main loop");
+  
+  if (config.lightSleepEnabled) {
+    DEBUG_PRINTF("[SLEEP] Light sleep enabled - will sleep after %d seconds inactivity\n", 
+                 config.inactivitySleepTimeout);
+  } else {
+    DEBUG_PRINTLN("[SLEEP] Light sleep disabled");
+  }
+  
   DEBUG_PRINTLN("====================================\n");
 }
 
@@ -384,6 +457,12 @@ void setup() {
 // ====================================================================
 void loop() {
   static unsigned long lastDebugTime = 0;
+  
+  // Check for doorbell interrupt
+  if (doorbellInterruptFlag) {
+    doorbellInterruptFlag = false;
+    handleDoorbellPress();
+  }
   
   server.handleClient();
   
@@ -398,11 +477,12 @@ void loop() {
     }
     DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
     DEBUG_PRINTF("  Uptime: %lu seconds\n", millis() / 1000);
-    if (config.sleepTimeout > 0) {
-      int timeLeft = config.sleepTimeout - ((millis() - lastActivityTime) / 1000);
-      DEBUG_PRINTF("  Sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
+    if (config.lightSleepEnabled && config.inactivitySleepTimeout > 0) {
+      int timeLeft = config.inactivitySleepTimeout - ((millis() - lastActivityTime) / 1000);
+      DEBUG_PRINTF("  Light sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
     }
-    DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : "FAILED");
+    DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : (sipCallAttempted ? "FAILED" : "NONE"));
+    DEBUG_PRINTF("  Total doorbell events: %d\n", eventLog.count);
     lastDebugTime = millis();
   }
   
@@ -420,7 +500,7 @@ void loop() {
     aSip->HandleUdpPacket((packetSize > 0) ? caSipIn : 0);
   }
   
-  checkDeepSleep();
+  checkLightSleep();
   delay(10);
 }
 
@@ -475,7 +555,9 @@ void setDefaultConfig() {
   strcpy(config.dialText, "Tuerklingel 1");
   config.ringDuration = 30;
   
-  config.sleepTimeout = 180;
+  config.sleepTimeout = 0;
+  config.lightSleepEnabled = 1;
+  config.inactivitySleepTimeout = 300;  // 5 minutes
   
   strcpy(config.apSSID, "ESP-Doorbell-Config");
   strcpy(config.apPassword, "12345678");
@@ -494,8 +576,7 @@ void setDefaultConfig() {
 void loadEventLog() {
   DEBUG_PRINTF("[EVENT] Loading event log from EEPROM address %d\n", EVENTLOG_START);
   DEBUG_PRINTF("[EVENT] EventLog structure size: %d bytes\n", sizeof(EventLog));
-  DEBUG_PRINTF("[CONFIG] Config structure size: %d bytes\n", sizeof(config));
-
+  
   EEPROM.get(EVENTLOG_START, eventLog);
   
   DEBUG_PRINTF("[EVENT] Raw loaded values - count=%d, writeIndex=%d\n", 
@@ -710,7 +791,7 @@ void setupWebServer() {
 }
 
 void handleRoot() {
-  lastActivityTime = millis();
+  lastActivityTime = millis();  // Reset sleep timer on web access
   
   String html = "<!DOCTYPE html><html><head>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
@@ -796,8 +877,12 @@ void handleRoot() {
   
   // Power Settings
   html += "<h2>⚡ Power Management</h2>";
-  html += "<label>Sleep Timeout (sec):</label><input type='number' name='sleepTimeout' value='" + String(config.sleepTimeout) + "' min='0' required>";
-  html += "<small>Set to 0 to disable deep sleep</small>";
+  html += "<label><input type='checkbox' name='lightSleepEnabled' value='1' " + String(config.lightSleepEnabled ? "checked" : "") + "> Enable Light Sleep</label>";
+  html += "<small>Light sleep saves power while keeping WiFi connection active</small>";
+  html += "<label>Inactivity Sleep Timeout (sec):</label><input type='number' name='inactivitySleepTimeout' value='" + String(config.inactivitySleepTimeout) + "' min='0' required>";
+  html += "<small>Enter light sleep after this many seconds of inactivity (0 to disable)</small>";
+  html += "<label>Legacy Deep Sleep Timeout (sec):</label><input type='number' name='sleepTimeout' value='" + String(config.sleepTimeout) + "' min='0' required>";
+  html += "<small>Deep sleep timeout - only used if explicitly triggered (0 to disable)</small>";
   
   html += "<br><br>";
   html += "<button type='submit' class='button'>💾 Save & Reboot</button>";
@@ -903,6 +988,14 @@ void handleSave() {
     DEBUG_PRINTF("[SAVE] Sleep timeout: %d\n", config.sleepTimeout);
   }
   
+  config.lightSleepEnabled = server.hasArg("lightSleepEnabled");
+  DEBUG_PRINTF("[SAVE] Light sleep: %s\n", config.lightSleepEnabled ? "ENABLED" : "DISABLED");
+  
+  if (server.hasArg("inactivitySleepTimeout")) {
+    config.inactivitySleepTimeout = server.arg("inactivitySleepTimeout").toInt();
+    DEBUG_PRINTF("[SAVE] Inactivity sleep timeout: %d\n", config.inactivitySleepTimeout);
+  }
+ 
   saveConfig();
   DEBUG_PRINTLN("[SAVE] Configuration saved to EEPROM");
   
@@ -910,7 +1003,7 @@ void handleSave() {
   html += "<meta http-equiv='refresh' content='10;url=/'>";
   html += "<style>body{font-family:Arial;text-align:center;padding:50px}</style>";
   html += "</head><body>";
-  html += "<h1>✅ Configuration Saved!</h1>";
+  html += "<h1>✓ Configuration Saved!</h1>";
   html += "<p>Device will reboot in 10 seconds...</p>";
   html += "<p>After reboot, ";
   if (strlen(config.ssid) > 1 && strcmp(config.ssid, "Your-WiFi-SSID") != 0) {
@@ -1072,10 +1165,149 @@ void handleWebSerial() {
 }
 
 // ====================================================================
-// DEEP SLEEP FUNCTION
+// DOORBELL INTERRUPT AND HANDLER
+// ====================================================================
+
+// Interrupt service routine - must be in IRAM and very fast
+void IRAM_ATTR doorbellISR() {
+  doorbellInterruptFlag = true;
+}
+
+void handleDoorbellPress() {
+  unsigned long now = millis();
+  
+  // Debounce check
+  if (now - lastDoorbellPress < DEBOUNCE_MS) {
+    DEBUG_PRINTF("[DOORBELL] Ignored - debounce (only %lu ms since last press)\n", 
+                 now - lastDoorbellPress);
+    return;
+  }
+  
+  // Verify button is still pressed (not noise)
+  if (digitalRead(DOORBELL_PIN) != LOW) {
+    DEBUG_PRINTLN("[DOORBELL] Ignored - button not pressed (noise)");
+    return;
+  }
+  
+  // Wait for stable press
+  delay(BUTTON_HOLD_MS);
+  if (digitalRead(DOORBELL_PIN) != LOW) {
+    DEBUG_PRINTLN("[DOORBELL] Ignored - button press too short");
+    return;
+  }
+  
+  DEBUG_PRINTLN("\n====================================");
+  DEBUG_PRINTLN("[DOORBELL] *** VALID PRESS DETECTED ***");
+  DEBUG_PRINTLN("====================================");
+  
+  lastDoorbellPress = now;
+  lastActivityTime = now;
+  
+  digitalWrite(LED_PIN, LOW); // LED on
+  
+  // Check WiFi connection
+  if (WiFi.status() != WL_CONNECTED) {
+    DEBUG_PRINTLN("[DOORBELL] ERROR: WiFi not connected!");
+    blinkLED(10, 100);
+    digitalWrite(LED_PIN, HIGH);
+    logDoorbellEvent(false, REASON_EXT_SYS_RST);
+    return;
+  }
+  
+  // Initialize SIP if not already active
+  if (aSip == nullptr) {
+    DEBUG_PRINTLN("[DOORBELL] Initializing SIP...");
+    aSip = new Sip(caSipOut, sizeof(caSipOut));
+    aSip->Init(config.router, config.sipPort, 
+               config.useDHCP ? WiFi.localIP().toString().c_str() : config.ip, 
+               config.sipPort, config.sipUser, config.sipPassword, config.ringDuration);
+    delay(100);
+  }
+  
+  // Make the call
+  DEBUG_PRINTF("[DOORBELL] Dialing: %s (%s)\n", config.dialNumber, config.dialText);
+  aSip->Dial(config.dialNumber, config.dialText);
+  
+  blinkLED(3, 100);
+  
+  // Keep SIP active for ring duration
+  unsigned long callStart = millis();
+  while (millis() - callStart < (config.ringDuration * 1000)) {
+    int packetSize = aSip->Udp.parsePacket();
+    if (packetSize > 0) {
+      caSipIn[0] = 0;
+      packetSize = aSip->Udp.read(caSipIn, sizeof(caSipIn));
+      if (packetSize > 0) {
+        caSipIn[packetSize] = 0;
+      }
+    }
+    aSip->HandleUdpPacket((packetSize > 0) ? caSipIn : 0);
+    
+    // Also handle web server during call
+    server.handleClient();
+    delay(10);
+  }
+  
+  digitalWrite(LED_PIN, HIGH); // LED off
+  
+  DEBUG_PRINTLN("[DOORBELL] Call completed successfully!");
+  DEBUG_PRINTLN("====================================\n");
+  
+  // Log the event
+  logDoorbellEvent(true, REASON_EXT_SYS_RST);
+  
+  sipCallSuccess = true;
+  sipCallAttempted = true;
+}
+
+// ====================================================================
+// LIGHT SLEEP FUNCTIONS
+// ====================================================================
+
+void checkLightSleep() {
+  if (!config.lightSleepEnabled || config.inactivitySleepTimeout == 0) {
+    return;
+  }
+  
+  unsigned long inactiveTime = (millis() - lastActivityTime) / 1000;
+  
+  if (inactiveTime >= config.inactivitySleepTimeout) {
+    enterLightSleep();
+  }
+}
+
+void enterLightSleep() {
+  DEBUG_PRINTLN("\n====================================");
+  DEBUG_PRINTLN("[SLEEP] Entering light sleep mode...");
+  DEBUG_PRINTLN("[SLEEP] Will wake on:");
+  DEBUG_PRINTLN("[SLEEP]   - Doorbell button press");
+  DEBUG_PRINTLN("[SLEEP]   - WiFi activity");
+  DEBUG_PRINTLN("====================================\n");
+  
+  // Flush debug output
+  Serial.flush();
+  delay(10);
+  
+  // Configure wake sources
+  // WiFi will wake automatically on incoming packets
+  // GPIO interrupt will wake on doorbell press
+  
+  // Enter light sleep until any interrupt
+  wifi_set_sleep_type(LIGHT_SLEEP_T);
+  
+  // Reset activity timer when we wake
+  lastActivityTime = millis();
+  
+  DEBUG_PRINTLN("[SLEEP] Woke from light sleep");
+}
+
+// ====================================================================
+// DEEP SLEEP FUNCTION (Legacy - kept for compatibility)
 // ====================================================================
 
 void checkDeepSleep() {
+  // This is now legacy - light sleep is preferred
+  // Only used if explicitly needed for very low power scenarios
   if (config.sleepTimeout == 0) return;
   
   unsigned long inactiveTime = (millis() - lastActivityTime) / 1000;
@@ -1083,7 +1315,7 @@ void checkDeepSleep() {
   if (inactiveTime >= config.sleepTimeout) {
     DEBUG_PRINTLN("\n====================================");
     DEBUG_PRINTLN("[SLEEP] Entering deep sleep...");
-    DEBUG_PRINTLN("[SLEEP] Press doorbell to wake");
+    DEBUG_PRINTLN("[SLEEP] Press doorbell button or reset to wake");
     DEBUG_PRINTLN("====================================\n");
     
     // Cleanup
@@ -1120,3 +1352,5 @@ void blinkLED(int times, int delayMs) {
     delay(delayMs);
   }
 }
+
+
