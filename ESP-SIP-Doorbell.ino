@@ -1,5 +1,6 @@
 /* ====================================================================
-   ESP8266 SIP Doorbell with Priority Ring on Wake
+   ESP8266 SIP Doorbell for FritzBox.
+   see: https://github.com/miguelitoelgrande/ESP-SIP-Doorbell
    Features:
    - Immediate SIP call on power-on/reset (doorbell priority)
    - Serial and WebSerial debugging options
@@ -243,8 +244,9 @@ void setup() {
   int wakeReason = resetInfo->reason;
   
   DEBUG_PRINTLN("\n====================================");
-  DEBUG_PRINTLN("ESP8266 SIP DOORBELL - LIGHT SLEEP");
+  DEBUG_PRINTLN("ESP8266 SIP DOORBELL for FritzBox");
   DEBUG_PRINTLN("====================================");
+  DEBUG_PRINTLN("[INFO] Documentation and Codebase: https://github.com/miguelitoelgrande/ESP-SIP-Doorbell");
   DEBUG_PRINTF("[WAKE] Reset reason: %d\n", wakeReason);
   
   // Check if doorbell button is pressed (active LOW)
