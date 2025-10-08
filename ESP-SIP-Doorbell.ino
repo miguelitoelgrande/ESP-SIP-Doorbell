@@ -470,18 +470,18 @@ void loop() {
   
   // Periodic status output (every 30 seconds)
   if (millis() - lastDebugTime > 30000) {
-    DEBUG_PRINTLN("\n[STATUS] System Status:");
-    DEBUG_PRINTF("  WiFi: %s", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+    //DEBUG_PRINTLN("\n[STATUS] System Status:");
+    DEBUG_PRINTF("[STATUS] WiFi: %s", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
     if (WiFi.status() == WL_CONNECTED) {
       DEBUG_PRINTF(" (%d dBm)\n", WiFi.RSSI());
     } else {
       DEBUG_PRINTLN("");
     }
     // DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
-    DEBUG_PRINTF("  Uptime: %lu seconds\n", millis() / 1000);
+    DEBUG_PRINTF("[STATUS] Uptime: %lu seconds", millis() / 1000);
     if (config.lightSleepEnabled && config.inactivitySleepTimeout > 0) {
       int timeLeft = config.inactivitySleepTimeout - ((millis() - lastActivityTime) / 1000);
-      DEBUG_PRINTF("  Light sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
+      DEBUG_PRINTF(" / Light sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
     }
     // DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : (sipCallAttempted ? "FAILED" : "NONE"));
     // DEBUG_PRINTF("  Total doorbell events: %d\n", eventLog.count);
@@ -634,19 +634,20 @@ void saveEventLog() {
 void logDoorbellEvent(bool success) {
   time_t now = time(nullptr);
   
+  /*
   DEBUG_PRINTF("[EVENT] Logging event - timestamp=%lu, success=%d\n", 
                (unsigned long)now, success ? 1 : 0);
   DEBUG_PRINTF("[EVENT] Current state BEFORE - count=%d, writeIndex=%d\n", 
                eventLog.count, eventLog.writeIndex);
-  
+  */
+
   DoorbellEvent event;
   event.timestamp = now;
   event.sipSuccess = success;
   
   // Store in ring buffer at current write position
   eventLog.events[eventLog.writeIndex] = event;
-  DEBUG_PRINTF("[EVENT] Stored event at index %d (timestamp=%lu, success=%d)\n", 
-               eventLog.writeIndex, (unsigned long)event.timestamp, event.sipSuccess ? 1 : 0);
+  // DEBUG_PRINTF("[EVENT] Stored event at index %d (timestamp=%lu, success=%d)\n", eventLog.writeIndex, (unsigned long)event.timestamp, event.sipSuccess ? 1 : 0);
   
   // Update counters BEFORE saving
   int oldWriteIndex = eventLog.writeIndex;
@@ -655,8 +656,7 @@ void logDoorbellEvent(bool success) {
   eventLog.writeIndex = (eventLog.writeIndex + 1) % MAX_EVENTS;
   eventLog.count++;
   
-  DEBUG_PRINTF("[EVENT] Updated state - count=%d->%d, writeIndex=%d->%d\n", 
-               oldCount, eventLog.count, oldWriteIndex, eventLog.writeIndex);
+  // DEBUG_PRINTF("[EVENT] Updated state - count=%d->%d, writeIndex=%d->%d\n", oldCount, eventLog.count, oldWriteIndex, eventLog.writeIndex);
   
   // Force flush any pending EEPROM operations
   EEPROM.commit();
@@ -665,21 +665,20 @@ void logDoorbellEvent(bool success) {
   // Now save everything to EEPROM
   EEPROM.put(EVENTLOG_START, eventLog);
   bool commitResult = EEPROM.commit();
-  DEBUG_PRINTF("[EVENT] EEPROM.commit() result: %s\n", commitResult ? "SUCCESS" : "FAILED");
+  // DEBUG_PRINTF("[EVENT] EEPROM.commit() result: %s\n", commitResult ? "SUCCESS" : "FAILED");
   delay(50); // Give EEPROM time to settle
   
   // Verify it was saved correctly
   EventLog verify;
   EEPROM.get(EVENTLOG_START, verify);
-  DEBUG_PRINTF("[EVENT] Verification AFTER save - count=%d, writeIndex=%d\n", 
-               verify.count, verify.writeIndex);
+  // DEBUG_PRINTF("[EVENT] Verification AFTER save - count=%d, writeIndex=%d\n", verify.count, verify.writeIndex);
   
   if (verify.count != eventLog.count || verify.writeIndex != eventLog.writeIndex) {
     DEBUG_PRINTLN("[EVENT] ⚠ WARNING: EEPROM verification FAILED!");
     DEBUG_PRINTF("[EVENT]   Expected: count=%d, writeIndex=%d\n", eventLog.count, eventLog.writeIndex);
     DEBUG_PRINTF("[EVENT]   Got:      count=%d, writeIndex=%d\n", verify.count, verify.writeIndex);
   } else {
-    DEBUG_PRINTLN("[EVENT] ✓ EEPROM verification PASSED");
+    // DEBUG_PRINTLN("[EVENT] ✓ EEPROM verification PASSED");
   }
   
   DEBUG_PRINTF("[EVENT] Event #%d logged: %s - %s\n", 
@@ -890,7 +889,7 @@ void handleRoot() {
   html += "<small>Default: pool.ntp.org</small>";
   html += "<label>Timezone Offset (seconds from UTC):</label><input type='number' name='timezoneOffset' value='" + String(config.timezoneOffset) + "'>";
   html += "<small>Examples: UTC+1/CET=3600, UTC+2/CEST=7200</small><br>";
-  html += "<small>Current system time: " + formatTime(time(nullptr)) + "</small>";
+  html += "<small><b>Current system time: " + formatTime(time(nullptr)) + "</b></small>";
   
   // Power Settings
   html += "<h2>⚡ Power Management</h2>";
@@ -1223,9 +1222,9 @@ void handleDoorbellPress() {
     return;
   }
   
-  DEBUG_PRINTLN("\n====================================");
+  // DEBUG_PRINTLN("\n====================================");
   DEBUG_PRINTLN("[DOORBELL] *** VALID PRESS DETECTED ***");
-  DEBUG_PRINTLN("====================================");
+  // DEBUG_PRINTLN("====================================");
   
   lastDoorbellPress = now;
   lastActivityTime = now;
@@ -1234,7 +1233,7 @@ void handleDoorbellPress() {
   
   // Check WiFi connection
   if (WiFi.status() != WL_CONNECTED) {
-    DEBUG_PRINTLN("[DOORBELL] ERROR: WiFi not connected!");
+    DEBUG_PRINTLN("[WIFI] ERROR: WiFi not connected!");
     blinkLED(10, 100);
     digitalWrite(LED_PIN, HIGH);
     logDoorbellEvent(false);
@@ -1243,7 +1242,7 @@ void handleDoorbellPress() {
   
   // Initialize SIP if not already active
   if (aSip == nullptr) {
-    DEBUG_PRINTLN("[DOORBELL] Initializing SIP...");
+    DEBUG_PRINTLN("[CALL] Initializing SIP...");
     aSip = new Sip(caSipOut, sizeof(caSipOut));
     aSip->Init(config.router, config.sipPort, 
                config.useDHCP ? WiFi.localIP().toString().c_str() : config.ip, 
@@ -1252,7 +1251,7 @@ void handleDoorbellPress() {
   }
   
   // Make the call
-  DEBUG_PRINTF("[DOORBELL] Dialing: %s (%s)\n", config.dialNumber, config.dialText);
+  DEBUG_PRINTF("[CALL] Dialing: %s (%s)\n", config.dialNumber, config.dialText);
   aSip->Dial(config.dialNumber, config.dialText);
   
   blinkLED(3, 100);
@@ -1277,8 +1276,8 @@ void handleDoorbellPress() {
   
   digitalWrite(LED_PIN, HIGH); // LED off
   
-  DEBUG_PRINTLN("[DOORBELL] Call completed successfully!");
-  DEBUG_PRINTLN("====================================\n");
+  DEBUG_PRINTLN("[CALL] Call completed successfully!");
+  // DEBUG_PRINTLN("====================================\n");
   
   // Log the event
   logDoorbellEvent(true);
