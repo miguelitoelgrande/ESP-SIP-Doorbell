@@ -65,7 +65,7 @@ struct Config {
   int ringDuration;
   
   // Deep sleep settings
-  int sleepTimeout;
+  int dummy;  // was sleepTimeout Legacy deep sleep - layy to keep CFG3, I kept the spacer.
   int lightSleepEnabled;  // 0=disabled, 1=enabled
   int inactivitySleepTimeout;  // Seconds of inactivity before light sleep
   
@@ -571,7 +571,7 @@ void setDefaultConfig() {
   strcpy(config.dialText, "Tuerklingel 1");
   config.ringDuration = 30;
   
-  config.sleepTimeout = 0;
+  //config.sleepTimeout = 0;   // legacy deep sleep. to be removed
   config.lightSleepEnabled = 1;
   config.inactivitySleepTimeout = 300;  // 5 minutes
   
@@ -910,8 +910,6 @@ void handleRoot() {
   html += "<small>Light sleep saves power while keeping WiFi connection active</small>";
   html += "<label>Inactivity Sleep Timeout (sec):</label><input type='number' name='inactivitySleepTimeout' value='" + String(config.inactivitySleepTimeout) + "' min='0' required>";
   html += "<small>Enter light sleep after this many seconds of inactivity (0 to disable)</small>";
-  html += "<label>Legacy Deep Sleep Timeout (sec):</label><input type='number' name='sleepTimeout' value='" + String(config.sleepTimeout) + "' min='0' required>";
-  html += "<small>Deep sleep timeout - only used if explicitly triggered (0 to disable)</small>";
   
   // Debug Settings
   html += "<h2>🐛 Debug Settings</h2>";
@@ -1015,11 +1013,6 @@ void handleSave() {
   
   if (server.hasArg("timezoneOffset")) {
     config.timezoneOffset = server.arg("timezoneOffset").toInt();
-  }
-  
-  if (server.hasArg("sleepTimeout")) {
-    config.sleepTimeout = server.arg("sleepTimeout").toInt();
-    DEBUG_PRINTF("[SAVE] Sleep timeout: %d\n", config.sleepTimeout);
   }
   
   config.lightSleepEnabled = server.hasArg("lightSleepEnabled");
@@ -1346,45 +1339,6 @@ void enterLightSleep() {
 }
 
 // ====================================================================
-// DEEP SLEEP FUNCTION (Legacy - kept for compatibility)
-// ====================================================================
-
-void checkDeepSleep() {
-  // This is now legacy - light sleep is preferred
-  // Only used if explicitly needed for very low power scenarios
-  if (config.sleepTimeout == 0) return;
-  
-  unsigned long inactiveTime = (millis() - lastActivityTime) / 1000;
-  
-  if (inactiveTime >= config.sleepTimeout) {
-    DEBUG_PRINTLN("\n====================================");
-    DEBUG_PRINTLN("[SLEEP] Entering deep sleep...");
-    DEBUG_PRINTLN("[SLEEP] Press doorbell button or reset to wake");
-    DEBUG_PRINTLN("====================================\n");
-    
-    // Cleanup
-    if (aSip != nullptr) {
-      delete aSip;
-      aSip = nullptr;
-    }
-    server.stop();
-    WiFi.disconnect();
-    WiFi.softAPdisconnect();
-    
-    // Blink to indicate sleep
-    for (int i = 0; i < 5; i++) {
-      digitalWrite(LED_PIN, LOW);
-      delay(100);
-      digitalWrite(LED_PIN, HIGH);
-      delay(100);
-    }
-    
-    delay(100);
-    ESP.deepSleep(0); // Sleep until hardware reset
-  }
-}
-
-// ====================================================================
 // UTILITY FUNCTIONS
 // ====================================================================
 
@@ -1413,5 +1367,6 @@ String formatUptime(time_t uptime) {
     snprintf(buffer, sizeof(buffer), "%d days, %dh %dm %ds", days, hours, minutes, seconds);
     return String(buffer);
 }
+
 
 
