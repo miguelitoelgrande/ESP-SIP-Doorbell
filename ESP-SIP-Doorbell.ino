@@ -245,14 +245,14 @@ void setup() {
   loadEventLog();
   
   // Get wake reason
-  rst_info* resetInfo = ESP.getResetInfoPtr();
-  int wakeReason = resetInfo->reason;
+  // rst_info* resetInfo = ESP.getResetInfoPtr();
+  // int wakeReason = resetInfo->reason;
   
   DEBUG_PRINTLN("\n====================================");
   DEBUG_PRINTLN("ESP8266 SIP DOORBELL for FritzBox");
   DEBUG_PRINTLN("====================================");
   DEBUG_PRINTLN("[INFO] Documentation and Codebase: https://github.com/miguelitoelgrande/ESP-SIP-Doorbell");
- // DEBUG_PRINTF("[WAKE] Reset reason: %d\n", wakeReason);
+  // DEBUG_PRINTF("[WAKE] Reset reason: %d\n", wakeReason);
   
   // Check if doorbell button is pressed (active LOW)
   bool doorbellPressedOnBoot = (digitalRead(DOORBELL_PIN) == LOW);
@@ -731,7 +731,7 @@ void syncTime() {
   tzset();
   
   // Configure time with timezone offset and DST offset (0 for no DST adjustment)
-  configTime(config.timezoneOffset, 0, config.ntpServer, "time.google.com", "pool.ntp.org");
+  configTime(config.timezoneOffset, 0, config.ntpServer, "pool.ntp.org");
   
   DEBUG_PRINTLN("[TIME] Waiting for NTP sync...");
   int attempts = 0;
@@ -751,16 +751,6 @@ void syncTime() {
     DEBUG_PRINTLN("[TIME] ✓ Time synchronized successfully!");
     // DEBUG_PRINTF("[TIME] Unix timestamp: %lu\n", now);
     DEBUG_PRINTF("[TIME] Current time: %s\n", formatTime(now).c_str());
-    
-    /*
-    // Verify the time makes sense
-    struct tm* timeinfo = localtime(&now);
-    if (timeinfo) {
-      DEBUG_PRINTF("[TIME] Verification: Year=%d, Month=%d, Day=%d, Hour=%d, Min=%d, Sec=%d\n",
-                   timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
-                   timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-    }
-    */
   } else {
     DEBUG_PRINTLN("[TIME] ✗ Time sync FAILED - using default");
     DEBUG_PRINTF("[TIME] Last timestamp received: %lu\n", now);
@@ -1142,20 +1132,6 @@ void handleEvents() {
     html += "<td class='" + String(event.sipSuccess ? "success" : "fail") + "'>";
     html += event.sipSuccess ? "✓ SUCCESS" : "✗ FAILED";
     html += "</td>";
-    // html += "<td>";
-    /*
-    switch(event.wakeReason) {
-      case REASON_DEFAULT_RST: html += "Power-on"; break;
-      case REASON_DEEP_SLEEP_AWAKE: html += "Deep Sleep Wake"; break;
-      case REASON_SOFT_RESTART: html += "Software Reset"; break;
-      case REASON_EXT_SYS_RST: html += "External Reset"; break;
-      case REASON_WDT_RST: html += "Hardware Watchdog"; break;
-      case REASON_EXCEPTION_RST: html += "Exception"; break;
-      case REASON_SOFT_WDT_RST: html += "Software Watchdog"; break;
-      default: html += "Unknown (" + String(event.wakeReason) + ")"; break;
-    }
-    html += "</td></tr>";
-    */
     html += "</tr>";
   }
   
@@ -1307,18 +1283,12 @@ void checkLightSleep() {
   
   if (inactiveTime >= config.inactivitySleepTimeout) {
     enterLightSleep();
-  }
+  } 
 }
 
 void enterLightSleep() {
-  /*
-  DEBUG_PRINTLN("\n====================================");
-  DEBUG_PRINTLN("[SLEEP] Entering light sleep mode...");
-  DEBUG_PRINTLN("[SLEEP] Will wake on:");
-  DEBUG_PRINTLN("[SLEEP]   - Doorbell button press");
-  DEBUG_PRINTLN("[SLEEP]   - WiFi activity");
-  DEBUG_PRINTLN("====================================\n");
-  */
+
+  DEBUG_PRINTF("[STATUS] Up: %s", formatUptime( millis() / 1000 ).c_str() );
   DEBUG_PRINTF("[SLEEP] Entering sleep at %s\n", formatTime( time(nullptr) ).c_str());
 
   // Flush debug output
@@ -1330,12 +1300,15 @@ void enterLightSleep() {
   // GPIO interrupt will wake on doorbell press
   
   // Enter light sleep until any interrupt
-  wifi_set_sleep_type(LIGHT_SLEEP_T);
+  // wifi_set_sleep_type(LIGHT_SLEEP_T);
+  wifi_set_sleep_type(MODEM_SLEEP_T);
   
   // Reset activity timer when we wake
   lastActivityTime = millis();
   
+  DEBUG_PRINTF("[STATUS] Up: %s", formatUptime( millis() / 1000 ).c_str() );
   DEBUG_PRINTF("[SLEEP] Woke from sleep at %s\n", formatTime( time(nullptr) ).c_str() );
+  
 }
 
 // ====================================================================
