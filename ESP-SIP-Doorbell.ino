@@ -475,28 +475,32 @@ void loop() {
   
   server.handleClient();
   
-  // Periodic status output (every 90 seconds)
-  if (millis() - lastDebugTime > 90*1000) {
+  /* Periodic Updates removed. Can have a look at the Status Screen...
+  // Periodic status output (every hour)
+  if (millis() - lastDebugTime > 60*60*1000) {
     //DEBUG_PRINTLN("\n[STATUS] System Status:");
-    DEBUG_PRINTF("[STATUS] WiFi: %s", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
+    DEBUG_PRINTF("[WIFI] %s", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
     if (WiFi.status() == WL_CONNECTED) {
       DEBUG_PRINTF(" (%d dBm)\n", WiFi.RSSI());
     } else {
       DEBUG_PRINTLN("");
     }
     // DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
-   // DEBUG_PRINTF("[STATUS] Uptime: %lu seconds", millis() / 1000);
-    DEBUG_PRINTF("[STATUS] Uptime: %s", formatUptime( millis() / 1000 ).c_str() );
+    // DEBUG_PRINTF("[STATUS] Uptime: %lu seconds", millis() / 1000);
+    
+    DEBUG_PRINTF("[STATUS] Up: %s", formatUptime( millis() / 1000 ).c_str() );
 
     if (config.lightSleepEnabled && config.inactivitySleepTimeout > 0) {
       int timeLeft = config.inactivitySleepTimeout - ((millis() - lastActivityTime) / 1000);
-      DEBUG_PRINTF(" / Light sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
+      DEBUG_PRINTF(" / Sleep in %d secs\n", timeLeft > 0 ? timeLeft : 0);
     }
+    
     // DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : (sipCallAttempted ? "FAILED" : "NONE"));
     // DEBUG_PRINTF("  Total doorbell events: %d\n", eventLog.count);
     lastDebugTime = millis();
   }
-  
+  */
+
   // Handle SIP packets if active
   if (aSip != nullptr) {
     int packetSize = aSip->Udp.parsePacket();
@@ -1057,7 +1061,7 @@ void handleStatus() {
   lastActivityTime = millis();
   
   String html = "<!DOCTYPE html><html><head>";
-  html += "<meta http-equiv='refresh' content='5'>";
+  html += "<meta http-equiv='refresh' content='15'>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
   html += "<meta charset='utf-8'>";
   html += "<style>";
@@ -1179,7 +1183,7 @@ void handleWebSerial() {
   
   String html = "<!DOCTYPE html><html><head>";
   html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<meta http-equiv='refresh' content='5'>";
+  html += "<meta http-equiv='refresh' content='15'>";
   html += "<meta charset='utf-8'>";
   html += "<style>body{font-family:monospace;margin:20px;background:#1e1e1e;color:#d4d4d4}";
   html += ".container{background:#252526;padding:15px;border-radius:5px;max-width:1000px;margin:0 auto}";
@@ -1188,7 +1192,7 @@ void handleWebSerial() {
   html += "</head><body>";
   html += "<div class='container'>";
   html += "<h2 style='color:#4CAF50'>🖥️ WebSerial Debug Console</h2>";
-  html += "<p><a href='/'>← Back to Config</a> <a href='/status'>Status</a> <a href='/events'>Events</a> | Auto-refresh: 5s</p>";
+  html += "<p><a href='/'>← Back to Config</a> <a href='/status'>Status</a> <a href='/events'>Events</a> | Auto-refresh: 15s</p>";
 
   
   if (config.debugWebSerial) {
@@ -1409,3 +1413,5 @@ String formatUptime(time_t uptime) {
     snprintf(buffer, sizeof(buffer), "%d days, %dh %dm %ds", days, hours, minutes, seconds);
     return String(buffer);
 }
+
+
