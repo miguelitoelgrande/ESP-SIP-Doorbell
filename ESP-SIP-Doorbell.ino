@@ -252,7 +252,7 @@ void setup() {
   DEBUG_PRINTLN("ESP8266 SIP DOORBELL for FritzBox");
   DEBUG_PRINTLN("====================================");
   DEBUG_PRINTLN("[INFO] Documentation and Codebase: https://github.com/miguelitoelgrande/ESP-SIP-Doorbell");
-  DEBUG_PRINTF("[WAKE] Reset reason: %d\n", wakeReason);
+ // DEBUG_PRINTF("[WAKE] Reset reason: %d\n", wakeReason);
   
   // Check if doorbell button is pressed (active LOW)
   bool doorbellPressedOnBoot = (digitalRead(DOORBELL_PIN) == LOW);
@@ -1319,7 +1319,7 @@ void enterLightSleep() {
   DEBUG_PRINTLN("[SLEEP]   - WiFi activity");
   DEBUG_PRINTLN("====================================\n");
   */
-  DEBUG_PRINTLN("[SLEEP] Entering light sleep mode (wake on Doorbell/WiFi)");
+  DEBUG_PRINTF("[SLEEP] Entering sleep at %s\n", formatTime( time(nullptr) ).c_str());
 
   // Flush debug output
   Serial.flush();
@@ -1335,7 +1335,7 @@ void enterLightSleep() {
   // Reset activity timer when we wake
   lastActivityTime = millis();
   
-  DEBUG_PRINTLN("[SLEEP] Woke from light sleep");
+  DEBUG_PRINTF("[SLEEP] Woke from sleep at %s\n", formatTime( time(nullptr) ).c_str() );
 }
 
 // ====================================================================
@@ -1367,6 +1367,5 @@ String formatUptime(time_t uptime) {
     snprintf(buffer, sizeof(buffer), "%d days, %dh %dm %ds", days, hours, minutes, seconds);
     return String(buffer);
 }
-
 
 
