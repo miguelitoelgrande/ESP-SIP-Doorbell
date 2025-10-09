@@ -35,6 +35,7 @@ void debugPrintf(const char* format, ...);
 #define DEBUG_PRINTLN(x) debugPrintln(x)
 #define DEBUG_PRINTF(...) debugPrintf(__VA_ARGS__)
 
+
 // ====================================================================
 // CONFIGURATION STRUCTURE
 // ====================================================================
@@ -213,6 +214,7 @@ void IRAM_ATTR doorbellISR();
 void handleDoorbellPress();
 void blinkLED(int times, int delayMs);
 String formatTime(unsigned long timestamp);
+String formatUptime(time_t uptime); // ... more readable than seconds...
 
 // ====================================================================
 // SETUP - PRIORITY: RING FIRST!
@@ -473,8 +475,8 @@ void loop() {
   
   server.handleClient();
   
-  // Periodic status output (every 30 seconds)
-  if (millis() - lastDebugTime > 30000) {
+  // Periodic status output (every 90 seconds)
+  if (millis() - lastDebugTime > 90*1000) {
     //DEBUG_PRINTLN("\n[STATUS] System Status:");
     DEBUG_PRINTF("[STATUS] WiFi: %s", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
     if (WiFi.status() == WL_CONNECTED) {
@@ -483,7 +485,9 @@ void loop() {
       DEBUG_PRINTLN("");
     }
     // DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
-    DEBUG_PRINTF("[STATUS] Uptime: %lu seconds", millis() / 1000);
+   // DEBUG_PRINTF("[STATUS] Uptime: %lu seconds", millis() / 1000);
+    DEBUG_PRINTF("[STATUS] Uptime: %s", formatUptime( millis() / 1000 ).c_str() );
+
     if (config.lightSleepEnabled && config.inactivitySleepTimeout > 0) {
       int timeLeft = config.inactivitySleepTimeout - ((millis() - lastActivityTime) / 1000);
       DEBUG_PRINTF(" / Light sleep in: %d seconds\n", timeLeft > 0 ? timeLeft : 0);
@@ -1083,7 +1087,9 @@ void handleStatus() {
   
   html += "<div class='section'>";
   html += "<div class='section-title'>System Information</div>";
-  html += "<div class='row'><div class='label'>Uptime</div><div class='value'>" + String(millis() / 1000) + " seconds</div></div>";
+ // html += "<div class='row'><div class='label'>Uptime</div><div class='value'>" + String(millis() / 1000) + " seconds</div></div>";
+  html += "<div class='row'><div class='label'>Uptime</div><div class='value'>" + String(formatUptime( millis() / 1000 )) + " </div></div>";
+
   html += "<div class='row'><div class='label'>Free Heap</div><div class='value'>" + String(ESP.getFreeHeap()) + " bytes</div></div>";
   html += "<div class='row'><div class='label'>Current Time</div><div class='value'>" + formatTime(time(nullptr)) + "</div></div>";
   html += "</div>";
@@ -1308,13 +1314,16 @@ void checkLightSleep() {
 }
 
 void enterLightSleep() {
+  /*
   DEBUG_PRINTLN("\n====================================");
   DEBUG_PRINTLN("[SLEEP] Entering light sleep mode...");
   DEBUG_PRINTLN("[SLEEP] Will wake on:");
   DEBUG_PRINTLN("[SLEEP]   - Doorbell button press");
   DEBUG_PRINTLN("[SLEEP]   - WiFi activity");
   DEBUG_PRINTLN("====================================\n");
-  
+  */
+  DEBUG_PRINTLN("[SLEEP] Entering light sleep mode (wake on Doorbell/WiFi)");
+
   // Flush debug output
   Serial.flush();
   delay(10);
@@ -1382,4 +1391,21 @@ void blinkLED(int times, int delayMs) {
     digitalWrite(LED_PIN, HIGH);
     delay(delayMs);
   }
+}
+
+String formatUptime(time_t uptime) {
+
+    // Convert uptime to days, hours, minutes, and seconds
+    int days = uptime / 86400UL; // 1 day = 86400 seconds
+    uptime %= 86400UL;           // Remaining seconds after extracting days
+
+    int hours = uptime / 3600; // 1 hour = 3600 seconds
+    uptime %= 3600;            // Remaining seconds after extracting hours
+
+    int minutes = uptime / 60; // 1 minute = 60 seconds
+    int seconds = uptime % 60; // Remaining seconds
+
+    char buffer[80];
+    snprintf(buffer, sizeof(buffer), "%d days, %dh %dm %ds", days, hours, minutes, seconds);
+    return String(buffer);
 }
