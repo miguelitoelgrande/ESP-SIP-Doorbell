@@ -40,8 +40,9 @@ And again: This ESP-Software is **not** TR064 based, but uses *SIP* for simplici
 - ESP8266 board (ESP-01, NodeMCU, Wemos D1, etc.)
 - USB power or battery power supply
 - Adapter to connect to existing, physical door bell circuit (with AC tansformer)
-- Doorbell button connected between RST (Reset) and GND - TODO: Might change to better solution
-- For deep sleep wake: RST pin connected to doorbell button circuit
+- Connect the Doorbell Button circuit between GPIO14 and GND. Will bring the ESP out of Light Sleep
+- OBSOLETE: Doorbell button connected between RST (Reset) and GND - TODO: Might change to better solution
+- OBSOLETE: For deep sleep wake: RST pin connected to doorbell button circuit
 - Compile with **Arduino IDE** (.ino is the Sketch File, add the SIP.h and SIP.cpp)
 
 ### Initial Configuration
