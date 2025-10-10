@@ -209,7 +209,6 @@ void connectWiFi();
 void syncTime();
 void makeEmergencySIPCall();
 void checkLightSleep();
-void enterLightSleep();
 void IRAM_ATTR doorbellISR();
 void handleDoorbellPress();
 void blinkLED(int times, int delayMs);
@@ -1270,45 +1269,43 @@ void handleDoorbellPress() {
   sipCallAttempted = true;
 }
 
+
 // ====================================================================
 // LIGHT SLEEP FUNCTIONS
 // ====================================================================
 
 void checkLightSleep() {
+  static bool sleepEnabled = false;
+  
   if (!config.lightSleepEnabled || config.inactivitySleepTimeout == 0) {
+    // Disable sleep if not configured
+    if (sleepEnabled) {
+      wifi_set_sleep_type(NONE_SLEEP_T);
+      sleepEnabled = false;
+      DEBUG_PRINTLN("[SLEEP] WiFi modem sleep disabled");
+    }
     return;
   }
   
   unsigned long inactiveTime = (millis() - lastActivityTime) / 1000;
   
   if (inactiveTime >= config.inactivitySleepTimeout) {
-    enterLightSleep();
-  } 
-}
-
-void enterLightSleep() {
-
-  DEBUG_PRINTF("[STATUS] Up: %s", formatUptime( millis() / 1000 ).c_str() );
-  DEBUG_PRINTF("[SLEEP] Entering sleep at %s\n", formatTime( time(nullptr) ).c_str());
-
-  // Flush debug output
-  Serial.flush();
-  delay(10);
-  
-  // Configure wake sources
-  // WiFi will wake automatically on incoming packets
-  // GPIO interrupt will wake on doorbell press
-  
-  // Enter light sleep until any interrupt
-  // wifi_set_sleep_type(LIGHT_SLEEP_T);
-  wifi_set_sleep_type(MODEM_SLEEP_T);
-  
-  // Reset activity timer when we wake
-  lastActivityTime = millis();
-  
-  DEBUG_PRINTF("[STATUS] Up: %s", formatUptime( millis() / 1000 ).c_str() );
-  DEBUG_PRINTF("[SLEEP] Woke from sleep at %s\n", formatTime( time(nullptr) ).c_str() );
-  
+    // Enable sleep mode (only once)
+    if (!sleepEnabled) {
+      DEBUG_PRINTF("[STATUS] Up: %s", formatUptime(millis() / 1000).c_str());
+      DEBUG_PRINTF(" [SLEEP] Entering WiFi modem sleep at %s\n", formatTime(time(nullptr)).c_str());
+      wifi_set_sleep_type(MODEM_SLEEP_T);
+      sleepEnabled = true;
+    }
+  } else {
+    // Disable sleep mode when active
+    if (sleepEnabled) {
+      DEBUG_PRINTF("[STATUS] Up: %s", formatUptime(millis() / 1000).c_str());
+      DEBUG_PRINTF(" [SLEEP] Woke from sleep at %s\n", formatTime(time(nullptr)).c_str());
+      wifi_set_sleep_type(NONE_SLEEP_T);
+      sleepEnabled = false;
+    }
+  }
 }
 
 // ====================================================================
