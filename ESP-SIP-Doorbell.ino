@@ -120,8 +120,16 @@ WiFiUDP ntpUDP;
 #define DEBOUNCE_MS 500  // Minimum time between doorbell presses
 #define BUTTON_HOLD_MS 100  // Button must be pressed this long to be valid
 
+// Watchdog and recovery settings
+#define WIFI_RECONNECT_INTERVAL 60000    // Check WiFi every 60 seconds
+#define MAX_FAILED_CALLS 3               // Reset after 3 failed calls in a row
+#define UPTIME_RESTART_DAYS 7            // Preventive restart after 7 days
+#define WIFI_CONNECT_TIMEOUT 30000       // 30 seconds to connect
+
 unsigned long lastActivityTime = 0;
 unsigned long lastDoorbellPress = 0;
+unsigned long lastWiFiCheck = 0;        // NEW
+int consecutiveFailedCalls = 0;         // NEW
 bool sipCallAttempted = false;
 bool sipCallSuccess = false;
 bool doorbellPressed = false;
@@ -214,6 +222,114 @@ void handleDoorbellPress();
 void blinkLED(int times, int delayMs);
 String formatTime(unsigned long timestamp);
 String formatUptime(time_t uptime); // ... more readable than seconds...
+
+
+// ====================================================================
+// WATCHDOG AND RECOVERY FUNCTIONS
+// ====================================================================
+
+void checkWiFiHealth() {
+  if (millis() - lastWiFiCheck < WIFI_RECONNECT_INTERVAL) {
+    return; // Not time to check yet
+  }
+  
+  lastWiFiCheck = millis();
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    DEBUG_PRINTLN("[WATCHDOG] WiFi disconnected! Attempting reconnect...");
+    
+    // Cleanup SIP if active
+    if (aSip != nullptr) {
+      delete aSip;
+      aSip = nullptr;
+      DEBUG_PRINTLN("[WATCHDOG] Cleaned up SIP connection");
+    }
+    
+    // Force disconnect and reconnect
+    WiFi.disconnect();
+    delay(500);
+    
+    WiFi.mode(WIFI_STA);
+    WiFi.hostname(config.hostname);
+    
+    if (!config.useDHCP) {
+      IPAddress ip, gw, subnet, dns;
+      if (ip.fromString(config.ip) && gw.fromString(config.router) && 
+          subnet.fromString(config.subnet) && dns.fromString(config.router)) {
+        WiFi.config(ip, gw, subnet, dns);
+      }
+    }
+    
+    WiFi.begin(config.ssid, config.password);
+    
+    unsigned long startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < WIFI_CONNECT_TIMEOUT) {
+      delay(500);
+      DEBUG_PRINT(".");
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      DEBUG_PRINTLN("\n[WATCHDOG] WiFi reconnected successfully!");
+      DEBUG_PRINTF("[WATCHDOG] IP: %s, RSSI: %d dBm\n", 
+                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
+      
+      // Resync time after reconnect
+      syncTime();
+      
+      // Reset consecutive failures on successful reconnect
+      consecutiveFailedCalls = 0;
+    } else {
+      DEBUG_PRINTLN("\n[WATCHDOG] WiFi reconnect FAILED!");
+      consecutiveFailedCalls++;
+      
+      // If can't reconnect after multiple attempts, restart
+      if (consecutiveFailedCalls >= MAX_FAILED_CALLS) {
+        DEBUG_PRINTLN("[WATCHDOG] Too many failures, restarting device...");
+        delay(1000);
+        ESP.restart();
+      }
+    }
+  } else {
+    // WiFi is connected, check signal quality
+    int rssi = WiFi.RSSI();
+    if (rssi < -85) {
+      DEBUG_PRINTF("[WATCHDOG] WARNING: Weak WiFi signal (%d dBm)\n", rssi);
+    }
+  }
+}
+
+void checkUptimeReset() {
+  // Preventive restart after configured days of uptime
+  unsigned long uptimeSeconds = millis() / 1000;
+  unsigned long uptimeDays = uptimeSeconds / 86400;
+  
+  if (uptimeDays >= UPTIME_RESTART_DAYS) {
+    DEBUG_PRINTF("[WATCHDOG] Preventive restart after %lu days uptime\n", uptimeDays);
+    logDoorbellEvent(true); // Log a "maintenance" event
+    delay(1000);
+    ESP.restart();
+  }
+}
+
+void reinitializeSIP() {
+  DEBUG_PRINTLN("[WATCHDOG] Reinitializing SIP connection...");
+  
+  if (aSip != nullptr) {
+    delete aSip;
+    aSip = nullptr;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    aSip = new Sip(caSipOut, sizeof(caSipOut));
+    aSip->Init(config.router, config.sipPort, 
+               config.useDHCP ? WiFi.localIP().toString().c_str() : config.ip, 
+               config.sipPort, config.sipUser, config.sipPassword, config.ringDuration);
+    DEBUG_PRINTLN("[WATCHDOG] SIP reinitialized");
+  } else {
+    DEBUG_PRINTLN("[WATCHDOG] Cannot reinitialize SIP - WiFi not connected");
+  }
+}
+
 
 // ====================================================================
 // SETUP - PRIORITY: RING FIRST!
@@ -474,32 +590,12 @@ void loop() {
   
   server.handleClient();
   
-  /* Periodic Updates removed. Can have a look at the Status Screen...
-  // Periodic status output (every hour)
-  if (millis() - lastDebugTime > 60*60*1000) {
-    //DEBUG_PRINTLN("\n[STATUS] System Status:");
-    DEBUG_PRINTF("[WIFI] %s", WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected");
-    if (WiFi.status() == WL_CONNECTED) {
-      DEBUG_PRINTF(" (%d dBm)\n", WiFi.RSSI());
-    } else {
-      DEBUG_PRINTLN("");
-    }
-    // DEBUG_PRINTF("  Free heap: %d bytes\n", ESP.getFreeHeap());
-    // DEBUG_PRINTF("[STATUS] Uptime: %lu seconds", millis() / 1000);
-    
-    DEBUG_PRINTF("[STATUS] Up: %s", formatUptime( millis() / 1000 ).c_str() );
-
-    if (config.lightSleepEnabled && config.inactivitySleepTimeout > 0) {
-      int timeLeft = config.inactivitySleepTimeout - ((millis() - lastActivityTime) / 1000);
-      DEBUG_PRINTF(" / Sleep in %d secs\n", timeLeft > 0 ? timeLeft : 0);
-    }
-    
-    // DEBUG_PRINTF("  Last call: %s\n", sipCallSuccess ? "SUCCESS" : (sipCallAttempted ? "FAILED" : "NONE"));
-    // DEBUG_PRINTF("  Total doorbell events: %d\n", eventLog.count);
-    lastDebugTime = millis();
-  }
-  */
-
+  // Watchdog: Check WiFi health
+  checkWiFiHealth();
+  
+  // Watchdog: Check if preventive restart needed
+  checkUptimeReset();
+  
   // Handle SIP packets if active
   if (aSip != nullptr) {
     int packetSize = aSip->Udp.parsePacket();
@@ -517,6 +613,7 @@ void loop() {
   checkLightSleep();
   delay(10);
 }
+
 
 // ====================================================================
 // CONFIGURATION FUNCTIONS
@@ -1091,6 +1188,13 @@ void handleStatus() {
   html += "</div>";
   
   html += "<div class='section'>";
+  html += "<div class='section-title'>System Health</div>";
+  html += "<div class='row'><div class='label'>Consecutive Failures</div><div class='value'>" + String(consecutiveFailedCalls) + "/" + String(MAX_FAILED_CALLS) + "</div></div>";
+  html += "<div class='row'><div class='label'>Next Restart</div><div class='value'>" + String(UPTIME_RESTART_DAYS - (millis() / 86400000)) + " days</div></div>";
+  html += "<div class='row'><div class='label'>WiFi Checks</div><div class='value'>Every " + String(WIFI_RECONNECT_INTERVAL/1000) + " seconds</div></div>";
+  html += "</div>";
+
+  html += "<div class='section'>";
   html += "<div class='section-title'>Last Doorbell Call</div>";
   html += "<div class='row'><div class='label'>Status</div><div class='value'>" + String(sipCallSuccess ? "✓ SUCCESS" : "✗ FAILED") + "</div></div>";
   if (eventLog.count > 0) {
@@ -1182,6 +1286,7 @@ void IRAM_ATTR doorbellISR() {
   doorbellInterruptFlag = true;
 }
 
+
 void handleDoorbellPress() {
   unsigned long now = millis();
   
@@ -1205,26 +1310,50 @@ void handleDoorbellPress() {
     return;
   }
   
-  // DEBUG_PRINTLN("\n====================================");
   DEBUG_PRINTLN("[DOORBELL] *** VALID PRESS DETECTED ***");
-  // DEBUG_PRINTLN("====================================");
   
   lastDoorbellPress = now;
   lastActivityTime = now;
   
   digitalWrite(LED_PIN, LOW); // LED on
   
-  // Check WiFi connection
+  // Check WiFi connection - WITH RECOVERY
   if (WiFi.status() != WL_CONNECTED) {
-    DEBUG_PRINTLN("[WIFI] ERROR: WiFi not connected!");
-    blinkLED(10, 100);
-    digitalWrite(LED_PIN, HIGH);
-    logDoorbellEvent(false);
-    return;
+    DEBUG_PRINTLN("[DOORBELL] WiFi not connected! Attempting emergency reconnect...");
+    
+    WiFi.disconnect();
+    delay(100);
+    WiFi.begin(config.ssid, config.password);
+    
+    unsigned long startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+      delay(200);
+      blinkLED(1, 50);
+    }
+    
+    if (WiFi.status() != WL_CONNECTED) {
+      DEBUG_PRINTLN("[DOORBELL] Emergency reconnect FAILED!");
+      blinkLED(10, 100);
+      digitalWrite(LED_PIN, HIGH);
+      logDoorbellEvent(false);
+      consecutiveFailedCalls++;
+      
+      // Force restart if too many failures
+      if (consecutiveFailedCalls >= MAX_FAILED_CALLS) {
+        DEBUG_PRINTLN("[DOORBELL] Too many failures, forcing restart...");
+        delay(1000);
+        ESP.restart();
+      }
+      return;
+    }
+    
+    DEBUG_PRINTLN("[DOORBELL] Emergency reconnect SUCCESS!");
   }
   
-  // Initialize SIP if not already active
-  if (aSip == nullptr) {
+  // Initialize or reinitialize SIP
+  bool sipNeedsInit = (aSip == nullptr);
+  
+  if (sipNeedsInit) {
     DEBUG_PRINTLN("[CALL] Initializing SIP...");
     aSip = new Sip(caSipOut, sizeof(caSipOut));
     aSip->Init(config.router, config.sipPort, 
@@ -1239,9 +1368,18 @@ void handleDoorbellPress() {
   
   blinkLED(3, 100);
   
+  bool callSuccess = true;
+  
   // Keep SIP active for ring duration
   unsigned long callStart = millis();
   while (millis() - callStart < (config.ringDuration * 1000)) {
+    // Check if WiFi dropped during call
+    if (WiFi.status() != WL_CONNECTED) {
+      DEBUG_PRINTLN("[CALL] WiFi dropped during call!");
+      callSuccess = false;
+      break;
+    }
+    
     int packetSize = aSip->Udp.parsePacket();
     if (packetSize > 0) {
       caSipIn[0] = 0;
@@ -1259,16 +1397,23 @@ void handleDoorbellPress() {
   
   digitalWrite(LED_PIN, HIGH); // LED off
   
-  DEBUG_PRINTLN("[CALL] Call completed successfully!");
-  // DEBUG_PRINTLN("====================================\n");
+  if (callSuccess) {
+    DEBUG_PRINTLN("[CALL] Call completed successfully!");
+    logDoorbellEvent(true);
+    consecutiveFailedCalls = 0; // Reset failure counter
+    sipCallSuccess = true;
+  } else {
+    DEBUG_PRINTLN("[CALL] Call FAILED!");
+    logDoorbellEvent(false);
+    consecutiveFailedCalls++;
+    sipCallSuccess = false;
+    
+    // Reinitialize SIP for next attempt
+    reinitializeSIP();
+  }
   
-  // Log the event
-  logDoorbellEvent(true);
-  
-  sipCallSuccess = true;
   sipCallAttempted = true;
 }
-
 
 // ====================================================================
 // LIGHT SLEEP FUNCTIONS
