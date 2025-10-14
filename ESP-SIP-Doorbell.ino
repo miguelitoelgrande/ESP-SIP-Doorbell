@@ -11,14 +11,26 @@
    - Persistent event logging (last 100 doorbell events)
    - Web-based configuration portal with AP fallback
    - Deep sleep with wake on hardware reset
+   - ESP32 also supported
  * ====================================================================*/
 
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
+
 #include <EEPROM.h>
 #include <time.h>
 #include <WiFiUdp.h>
 #include "Sip.h"
+
+// Board-specific includes
+#if defined(ESP8266)
+  #include <ESP8266WiFi.h>
+  #include <ESP8266WebServer.h>
+  #define WebServer ESP8266WebServer
+#elif defined(ESP32)
+  #include <WiFi.h>
+  #include <WebServer.h>
+#else
+  #error "This code requires ESP8266 or ESP32"
+#endif
 
 // ====================================================================
 // DEBUG CONFIGURATION
@@ -65,7 +77,7 @@ struct Config {
   int ringDuration;
   
   // Deep sleep settings
-  int dummy;  // was sleepTimeout Legacy deep sleep - layy to keep CFG3, I kept the spacer.
+  int wifiTxPower;  // was dummy - WiFi TX power 0-100 (percentage)
   int lightSleepEnabled;  // 0=disabled, 1=enabled
   int inactivitySleepTimeout;  // Seconds of inactivity before light sleep
   
@@ -107,14 +119,23 @@ EventLog eventLog;
 // ====================================================================
 // GLOBAL VARIABLES
 // ====================================================================
-ESP8266WebServer server(80);
+
+// Board-specific includes
+#if defined(ESP8266)
+   ESP8266WebServer server(80);
+#elif defined(ESP32)
+   WebServer server(80);
+#else
+  #error "This code requires ESP8266 or ESP32"
+#endif
+
 WiFiUDP ntpUDP;
 
 // ====================================================================
 // HARDWARE CONFIGURATION
 // ====================================================================
-#define LED_PIN 2
-#define DOORBELL_PIN 14  // D5 on NodeMCU, change as needed. Connect doorbell button here (active LOW with pullup)
+#define LED_PIN  LED_BUILTIN     //  8- ESP32C3?? || 2 ESP8266  
+#define DOORBELL_PIN 10 //  14  // D5 on NodeMCU, change as needed. Connect doorbell button here (active LOW with pullup)
 
 // Debounce settings
 #define DEBOUNCE_MS 500  // Minimum time between doorbell presses
@@ -261,6 +282,7 @@ void checkWiFiHealth() {
     }
     
     WiFi.begin(config.ssid, config.password);
+    setWiFiTxPower();  // Set TX power after WiFi.begin()
     
     unsigned long startAttempt = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < WIFI_CONNECT_TIMEOUT) {
@@ -330,6 +352,23 @@ void reinitializeSIP() {
   }
 }
 
+
+void setWiFiTxPower() {
+  // Constrain to valid range
+  int powerPercent = constrain(config.wifiTxPower, 0, 100);
+  
+  #if defined(ESP8266)
+    // ESP8266: 0 to 20.5 dBm (82 = 20.5dBm max)
+    float dbm = (powerPercent / 100.0) * 20.5;
+    WiFi.setOutputPower(dbm);
+    DEBUG_PRINTF("[WIFI] TX Power set to %.1f dBm (%d%%)\n", dbm, powerPercent);
+  #elif defined(ESP32)
+    // ESP32: 2 to 20 dBm (using WiFi.setTxPower)
+    int8_t dbm = 2 + ((powerPercent / 100.0) * 18);
+    WiFi.setTxPower((wifi_power_t)dbm);
+    DEBUG_PRINTF("[WIFI] TX Power set to %d dBm (%d%%)\n", dbm, powerPercent);
+  #endif
+}
 
 // ====================================================================
 // SETUP - PRIORITY: RING FIRST!
@@ -418,7 +457,8 @@ void setup() {
     
     DEBUG_PRINTLN("[PRIORITY] Starting WiFi connection...");
     WiFi.begin(config.ssid, config.password);
-    
+    setWiFiTxPower();  // Set TX power after WiFi.begin()
+
     // Fast connection attempt (10 seconds max)
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 50) {
@@ -506,7 +546,8 @@ void setup() {
     }
     
     WiFi.begin(config.ssid, config.password);
-    
+    setWiFiTxPower();  // Set TX power after WiFi.begin()
+
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 30) {
       delay(200);
@@ -667,7 +708,7 @@ void setDefaultConfig() {
   strcpy(config.dialText, "Tuerklingel 1");
   config.ringDuration = 30;
   
-  //config.sleepTimeout = 0;   // legacy deep sleep. to be removed
+  config.wifiTxPower = 75;  // TX power percentage
   config.lightSleepEnabled = 1;
   config.inactivitySleepTimeout = 300;  // 5 minutes
   
@@ -982,6 +1023,11 @@ void handleRoot() {
   html += "<small>Example: 'Tuerklingel' - not shown in all cases</small><br>";
   html += "<label>Ring Duration (sec):</label><input type='number' name='ringDuration' value='" + String(config.ringDuration) + "' min='5' max='120' required>";
 
+  // WiFi TX Power
+  html += "<h2>📡 WiFi TX Power</h2>";
+  html += "<label>TX Power (%):</label><input type='number' name='wifiTxPower' value='" + String(config.wifiTxPower) + "' min='0' max='100' required>";
+  html += "<small>WiFi transmission power: 0-100% (default 75%). Lower values save power but reduce range.</small>";
+
   // Time Settings
   html += "<h2>🕐 Time Settings</h2>";
   html += "<label>NTP Server:</label><input type='text' name='ntpServer' value='" + String(config.ntpServer) + "'>";
@@ -1086,6 +1132,11 @@ void handleSave() {
     DEBUG_PRINTF("[SAVE] Ring duration: %d\n", config.ringDuration);
   }
   
+  if (server.hasArg("wifiTxPower")) {
+    config.wifiTxPower = server.arg("wifiTxPower").toInt();
+    DEBUG_PRINTF("[SAVE] WiFi TX Power: %d%%\n", config.wifiTxPower);
+  }
+
   config.debugSerial = server.hasArg("debugSerial");
   config.debugWebSerial = server.hasArg("debugWebSerial");
   DEBUG_PRINTF("[SAVE] Debug - Serial: %s, WebSerial: %s\n", 
@@ -1324,7 +1375,8 @@ void handleDoorbellPress() {
     WiFi.disconnect();
     delay(100);
     WiFi.begin(config.ssid, config.password);
-    
+    setWiFiTxPower();  // Set TX power after WiFi.begin()
+
     unsigned long startAttempt = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
       delay(200);
@@ -1425,7 +1477,11 @@ void checkLightSleep() {
   if (!config.lightSleepEnabled || config.inactivitySleepTimeout == 0) {
     // Disable sleep if not configured
     if (sleepEnabled) {
-      wifi_set_sleep_type(NONE_SLEEP_T);
+      #if defined(ESP8266)
+        wifi_set_sleep_type(NONE_SLEEP_T);
+      #elif defined(ESP32)
+        WiFi.setSleep(false);
+      #endif
       sleepEnabled = false;
       DEBUG_PRINTLN("[SLEEP] WiFi modem sleep disabled");
     }
@@ -1439,7 +1495,11 @@ void checkLightSleep() {
     if (!sleepEnabled) {
       DEBUG_PRINTF("[STATUS] Up: %s\n", formatUptime(millis() / 1000).c_str());
       DEBUG_PRINTF(" [SLEEP] Entering WiFi modem sleep at %s\n", formatTime(time(nullptr)).c_str());
-      wifi_set_sleep_type(MODEM_SLEEP_T);
+      #if defined(ESP8266)
+        wifi_set_sleep_type(MODEM_SLEEP_T);
+      #elif defined(ESP32)
+        WiFi.setSleep(true);  // Enable WiFi sleep
+      #endif
       sleepEnabled = true;
     }
   } else {
@@ -1447,7 +1507,11 @@ void checkLightSleep() {
     if (sleepEnabled) {
       DEBUG_PRINTF("[STATUS] Up: %s", formatUptime(millis() / 1000).c_str());
       DEBUG_PRINTF(" [SLEEP] Woke from sleep at %s\n", formatTime(time(nullptr)).c_str());
-      wifi_set_sleep_type(NONE_SLEEP_T);
+      #if defined(ESP8266)
+        wifi_set_sleep_type(NONE_SLEEP_T);
+      #elif defined(ESP32)
+        WiFi.setSleep(false);
+      #endif
       sleepEnabled = false;
     }
   }
