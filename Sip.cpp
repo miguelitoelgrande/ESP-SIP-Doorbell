@@ -378,15 +378,9 @@ void Sip::HandleUdpPacket(const char* p)
 int Sip::SendUdp()
 {
 	Udp.beginPacket(pSipIp, iSipPort);
-	Udp.write(pbuf, strlen(pbuf));
+	Udp.write((const unsigned char*) pbuf, strlen(pbuf));  // MM: dirty fix, implicit conversion
 	Udp.endPacket();
 	return 0;
-}
-
-// generate a 30 bit random number
-uint32_t Sip::Random()
-{
-	return secureRandom(0x3fffffff);
 }
 
 uint32_t Sip::Millis()
@@ -394,14 +388,56 @@ uint32_t Sip::Millis()
 	return (uint32_t)millis() + 1;
 }
 
-void Sip::MakeMd5Digest(char* pOutHex33, char* pIn)
-{
-	MD5Builder aMd5;
-	aMd5.begin();
-	aMd5.add(pIn);
-	aMd5.calculate();
-	aMd5.getChars(pOutHex33);
-}
+#if defined(ESP8266)
+
+		void Sip::MakeMd5Digest(char* pOutHex33, char* pIn)
+		{
+			MD5Builder aMd5;
+			aMd5.begin();
+			aMd5.add(pIn);
+			aMd5.calculate();
+			aMd5.getChars(pOutHex33);
+		}
+
+		// generate a 30 bit random number
+		uint32_t Sip::Random()
+		{
+			return secureRandom(0x3fffffff);
+		}
+
+#elif defined(ESP32)
+
+		#include "mbedtls/md5.h"
+
+		void Sip::MakeMd5Digest(char* pOutHex33, char* pIn)
+		{
+				unsigned char md5Result[16]; // MD5 erzeugt 16 Byte
+				mbedtls_md5_context ctx;
+
+				mbedtls_md5_init(&ctx);
+				mbedtls_md5_starts_ret(&ctx);
+				mbedtls_md5_update_ret(&ctx, (const unsigned char*)pIn, strlen(pIn));
+				mbedtls_md5_finish_ret(&ctx, md5Result);
+				mbedtls_md5_free(&ctx);
+
+				// Ergebnis als Hex-String ausgeben
+				for (int i = 0; i < 16; i++)
+						sprintf(pOutHex33 + i * 2, "%02x", md5Result[i]);
+
+				pOutHex33[32] = '\0'; // Nullterminierung
+		}
+
+		// generate a 30 bit random number
+		uint32_t Sip::Random()
+		{
+			return esp_random() & 0x3FFFFFFF;
+		//	return secureRandom(0x3fffffff);
+		}
+
+#else
+  #error "This code requires ESP8266 or ESP32"
+#endif
+
 
 WiFiUDP Sip::Udp;
 
