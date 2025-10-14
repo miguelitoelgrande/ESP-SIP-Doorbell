@@ -1437,7 +1437,7 @@ void checkLightSleep() {
   if (inactiveTime >= config.inactivitySleepTimeout) {
     // Enable sleep mode (only once)
     if (!sleepEnabled) {
-      DEBUG_PRINTF("[STATUS] Up: %s", formatUptime(millis() / 1000).c_str());
+      DEBUG_PRINTF("[STATUS] Up: %s\n", formatUptime(millis() / 1000).c_str());
       DEBUG_PRINTF(" [SLEEP] Entering WiFi modem sleep at %s\n", formatTime(time(nullptr)).c_str());
       wifi_set_sleep_type(MODEM_SLEEP_T);
       sleepEnabled = true;
