@@ -281,18 +281,14 @@ Power Supply → 3.3V/5V and GND
 - Blinks = various status indicators
 
 
-For deep sleep wake functionality, you need to wire the doorbell button:
-```
-Button --[10kΩ]-- 3.3V
-       |
-       +---------- RST pin
-       |
-       +---------- GND (when pressed)
+
 ```
 
 
 
-  ![Schematics](./schematics/Klingelschaltung-Optokoppler.png)
+  ![Schematics](./schematics/Klingeltrafo_ESP32-C3-Mini-Breadboard_schem.svg)
+
+
 
 > Hauptbestandteil ist ein Optokoppler (PC817), der zwei Stromkreise über eine Lichtbrücke trennt. Damit die LED des PC817 die korrekte Betriebsspannung von 1,2 Volt erhält, ist ein passender Vorwiderstand von 330 Ohm (8 Volt), 560 Ohm (12 Volt) oder 1,2 Kiloohm (24 Volt) erforderlich. Bei 24 V müsste der Widerstand eigentlich 0,5 W aushalten, da in der Regel aber nur wenige Sekunden geklingelt wird, hält auch die 0,25-W-Variante stand. Hat man jedoch Dauerdrücker im Freundeskreis, sollte man vorsichtshalber die 0,5-W-Variante wählen.
 
@@ -300,7 +296,9 @@ Button --[10kΩ]-- 3.3V
 
 _Source: https://www.heise.de/select/ct/2017/17/1502995489716437_
 
+  ![Sample Breadboard](./schematics/Klingeltrafo_ESP32-C3-Mini-Breadboard_bb.png)
 
+obsolete (new version has one universal set of two 1/4W resistors):
 | DoorBell Transformer<br>(AC current)    |  R1     |
 |-----------------|----------|
 | 8 V            | 330 Ohm  |
