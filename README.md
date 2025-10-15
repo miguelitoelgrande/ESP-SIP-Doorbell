@@ -1,5 +1,5 @@
-# ESP8266 SIP Doorbell - Getting Started Guide
-Attach an ESP8266 board to a classic doorbell and use SIP protocol to make the phones connected to a FritzBox ring.
+# ESP SIP Doorbell - Getting Started Guide
+Attach an ESP8266 or ESP32 board to a classic doorbell and use SIP protocol to make the phones connected to a FritzBox ring.
 
 This ESP8266-based doorbell connects to your FritzBox (or other SIP server) and makes instant phone calls when triggered. The device prioritizes the doorbell function above all else - when powered on or reset, it immediately attempts to connect and ring your phones.
 
@@ -38,6 +38,7 @@ And again: This ESP-Software is **not** TR064 based, but uses *SIP* for simplici
 
 ### Hardware and Software Requirements
 - ESP8266 board (ESP-01, NodeMCU, Wemos D1, etc.)
+- or ESP32 board (e.g. a tiny ESP32-C3 SuperMini will do)
 - USB power or battery power supply
 - Adapter to connect to existing, physical door bell circuit (with AC tansformer)
 - Connect the Doorbell Button circuit between GPIO14 and GND. Will bring the ESP out of Light Sleep
