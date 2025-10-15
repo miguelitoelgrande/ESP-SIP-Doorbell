@@ -1,5 +1,5 @@
 /* ====================================================================
-   ESP8266 SIP Doorbell for FritzBox.
+   ESP SIP Doorbell for FritzBox (ESP32 and ESP8266).
    see: https://github.com/miguelitoelgrande/ESP-SIP-Doorbell
 
   Coded with some AI assistance and inspiration of similar projects (see Readme.md)
@@ -12,6 +12,8 @@
    - Web-based configuration portal with AP fallback
    - Deep sleep with wake on hardware reset
    - ESP32 also supported
+   - Tested with "Generic ESP8266 Module" (Dev Board)
+   - "ESP32C3 Dev Module"- ESP32-C3 SuperMini ["USB CDC On Boot" to "Enable" for USB logging!]
  * ====================================================================*/
 
 
@@ -123,8 +125,10 @@ EventLog eventLog;
 // Board-specific includes
 #if defined(ESP8266)
    ESP8266WebServer server(80);
+   #define LED_PIN 2     //  2 ESP8266   LED_BUILTIN
 #elif defined(ESP32)
    WebServer server(80);
+   #define LED_PIN 8     //  8- ESP32C3??  LED_BUILTIN
 #else
   #error "This code requires ESP8266 or ESP32"
 #endif
@@ -134,8 +138,8 @@ WiFiUDP ntpUDP;
 // ====================================================================
 // HARDWARE CONFIGURATION
 // ====================================================================
-#define LED_PIN  LED_BUILTIN     //  8- ESP32C3?? || 2 ESP8266  
-#define DOORBELL_PIN 10 //  14  // D5 on NodeMCU, change as needed. Connect doorbell button here (active LOW with pullup)
+
+#define DOORBELL_PIN 10 //   // former: GPIO14 = D5 on NodeMCU, change as needed. Connect doorbell button here (active LOW with pullup)
 
 // Debounce settings
 #define DEBOUNCE_MS 500  // Minimum time between doorbell presses
@@ -663,7 +667,6 @@ void loop() {
 void loadConfig() {
   EEPROM.get(CONFIG_START, config);
   
-
   if (strcmp(config.version, CONFIG_VERSION) != 0) {
     Serial.println("[CONFIG] No valid config, loading defaults");
     setDefaultConfig();
@@ -732,11 +735,11 @@ void loadEventLog() {
   
   EEPROM.get(EVENTLOG_START, eventLog);
   
-  /*
+/*
     // MM: quick and dirty flush old log..
     eventLog.count = -1;
     eventLog.writeIndex = -1;
-  */
+*/
   /*
   DEBUG_PRINTF("[EVENT] Raw loaded values - count=%d, writeIndex=%d\n", 
                eventLog.count, eventLog.writeIndex);
@@ -1494,7 +1497,7 @@ void checkLightSleep() {
     // Enable sleep mode (only once)
     if (!sleepEnabled) {
       DEBUG_PRINTF("[STATUS] Up: %s\n", formatUptime(millis() / 1000).c_str());
-      DEBUG_PRINTF(" [SLEEP] Entering WiFi modem sleep at %s\n", formatTime(time(nullptr)).c_str());
+      DEBUG_PRINTF("[SLEEP] Entering WiFi modem sleep at %s\n", formatTime(time(nullptr)).c_str());
       #if defined(ESP8266)
         wifi_set_sleep_type(MODEM_SLEEP_T);
       #elif defined(ESP32)
@@ -1505,8 +1508,8 @@ void checkLightSleep() {
   } else {
     // Disable sleep mode when active
     if (sleepEnabled) {
-      DEBUG_PRINTF("[STATUS] Up: %s", formatUptime(millis() / 1000).c_str());
-      DEBUG_PRINTF(" [SLEEP] Woke from sleep at %s\n", formatTime(time(nullptr)).c_str());
+      DEBUG_PRINTF("[STATUS] Up: %s\n", formatUptime(millis() / 1000).c_str());
+      DEBUG_PRINTF("[SLEEP] Woke from sleep at %s\n", formatTime(time(nullptr)).c_str());
       #if defined(ESP8266)
         wifi_set_sleep_type(NONE_SLEEP_T);
       #elif defined(ESP32)
