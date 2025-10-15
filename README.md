@@ -281,12 +281,17 @@ Power Supply → 3.3V/5V and GND
 - Blinks = various status indicators
 
 
+Schematics:
+  ![Schematics](./schematics/Klingeltrafo_ESP32-C3-Mini-Breadboard_schem.svg)
+
+... could look like this (with ESP32-C3 Supermini):
+![Sample Breadboard](./schematics/Klingeltrafo_ESP32-C3-Mini-Breadboard_bb.png)
 
 ```
 
 
 
-  ![Schematics](./schematics/Klingeltrafo_ESP32-C3-Mini-Breadboard_schem.svg)
+
 
 
 
@@ -296,7 +301,7 @@ Power Supply → 3.3V/5V and GND
 
 _Source: https://www.heise.de/select/ct/2017/17/1502995489716437_
 
-  ![Sample Breadboard](./schematics/Klingeltrafo_ESP32-C3-Mini-Breadboard_bb.png)
+
 
 obsolete (new version has one universal set of two 1/4W resistors):
 | DoorBell Transformer<br>(AC current)    |  R1     |
